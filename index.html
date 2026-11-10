@@ -876,7 +876,7 @@ const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;");
 const escA=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");   /* attribute-safe */
 function tabbar(){
  const t=Store.state.tab, tab=(k,ic,l)=>`<div class="tab ${t===k?'on':''}" onclick="Store.tabTo('${k}')${k==='activity'?';Fleet.loadAct()':k==='export'?';expCount()':k==='perf'?';Perf.load()':''}">${ic}${l}</div>`;
- if(Store.state.appMode==="cds")return `<div class="tabbar">${tab('fleet',I.units,'Fleet')}${tab('perf',I.clock.replace(/width="15" height="15"/,''),'Rank')}${tab('activity',I.clock.replace(/width="15" height="15"/,''),'Activity')}${tab('export',I.share.replace(/width="15" height="15"/,''),'Data')}</div>`;
+ if(Store.state.appMode==="cds")return `<div class="tabbar">${tab('fleet',I.units,'Fleet')}${tab('cdsmap',I.units,'Map')}${tab('perf',I.clock.replace(/width="15" height="15"/,''),'Rank')}${tab('activity',I.clock.replace(/width="15" height="15"/,''),'Activity')}${tab('export',I.share.replace(/width="15" height="15"/,''),'Data')}</div>`;
  return `<div class="tabbar">${tab('map',I.map,'Map')}${tab('walk',I.walk,'Walk')}${tab('value',I.val,'Value')}${tab('myunits',I.units,'Saved')}</div>`;
 }
 /* Root screens carry the Collector | CDS switch next to the theme button. */
@@ -1746,7 +1746,7 @@ const Fleet={
    this.loading=false; if(cdsScreen())render();
  },
  shown(){
-   let u=this.units.filter(x=>this.all||(x.age_s!=null&&x.age_s<14*86400));
+   let u=this.units.filter(x=>(this.all||(x.age_s!=null&&x.age_s<14*86400))&&CF.match(x));
    const by={seen:x=>x.age_s??1e12, batt:x=>x.vbat_mv??99999, sig:x=>-(x.rssi||-200), fill:x=>-(x.filled||0)}[this.sort];
    return u.sort((a,b)=>by(a)-by(b));
  },
@@ -1782,7 +1782,7 @@ const Fleet={
    a.loading=false; if(cdsScreen())render();
  }
 };
-const cdsScreen=()=>["fleet","fleetunit","activity","cds","export","perf"].includes(Store.state.screen.name);
+const cdsScreen=()=>["fleet","fleetunit","activity","cds","export","perf","cdsmap"].includes(Store.state.screen.name);
 /* Passed-over containers (view slot_suspects, migration 2026-11-09): a slot
    still holding the same container after 3+ others at its unit or site were
    collected - likely contaminated or not refundable. Each container
@@ -1868,7 +1868,8 @@ Views.fleet=()=>{
    ${tile(F.pk24??"—","packets, 24 h")}
    ${tile(u.reduce((a,x)=>a+(x.slots_fault||0),0),"faulted slots",u.some(x=>x.slots_fault)?"var(--amber)":"")}
   </div>
-  <div class="chips" style="padding:12px 0 8px">
+  ${cdsFilterBar()}
+  <div class="chips" style="padding:4px 0 8px">
    ${[["seen","Last seen"],["batt","Lowest cell"],["sig","Signal"],["fill","Fullest"]].map(([k,l])=>`<div class="chip ${F.sort===k?"on":""}" onclick="Fleet.sort='${k}';render()">${l}</div>`).join("")}
    <div class="chip ${F.all?"on":""}" onclick="Fleet.all=!Fleet.all;render()">${F.all?`All ${F.units.length}`:`Active ${act.length}`}</div>
   </div>
@@ -2050,6 +2051,78 @@ async function showRaw(id){
 }
 
 /* ---- Activity ---- */
+/* ---- CDS filters: one set, used by Fleet, Map and Rank ---- */
+const CF={q:"",site:"",suburb:"",status:"",meta:null,sites:[],
+ async ensure(){ if(this.meta)return; this.meta={};
+   try{const [us,ss]=await Promise.all([apiGet("units?select=unit_id,suburb,site_id"),apiGet("sites?select=site_id,name")]);
+     us.forEach(u=>this.meta[u.unit_id]=u); this.sites=ss.filter(x=>x.site_id!=="bench");}catch(e){}
+   if(cdsScreen())render(); },
+ sub(id){return (this.meta&&this.meta[id]&&this.meta[id].suburb)||"";},
+ st(u){const f=u.freshness||(u.age_s!=null&&u.age_s<7200?"live":u.age_s!=null&&u.age_s<86400?"stale":"offline");return f;},
+ match(u){ const id=u.unit_id, q=this.q.trim().toLowerCase();
+   if(this.site&&(u.site_id||"")!==this.site)return false;
+   if(this.suburb&&this.sub(id)!==this.suburb)return false;
+   if(this.status&&u.freshness!==undefined&&this.st(u)!==this.status)return false;
+   if(q&&!`${u.label||""} ${id} ${this.sub(id)}`.toLowerCase().includes(q))return false;
+   return true; },
+ active(){return !!(this.q||this.site||this.suburb||this.status);},
+ subs(){const set=new Set(); Object.values(this.meta||{}).forEach(m=>{if(m.suburb&&(!this.site||m.site_id===this.site))set.add(m.suburb);}); return [...set].sort();},
+ set(k,v){this[k]=v; if(k==="site")this.suburb=""; if(Store.state.screen.name==="perf")Perf.load(); else render();}
+};
+function cdsFilterBar(){ CF.ensure();
+ const opt=(v,l,cur)=>`<option value="${esc(v)}" ${cur===v?"selected":""}>${esc(l)}</option>`;
+ const sel="flex:1;min-width:0;padding:9px 10px;border-radius:10px;border:1.5px solid var(--s-line);background:var(--s-surface);color:var(--s-ink);font:inherit;font-size:13.5px";
+ return `<div class="card" style="padding:10px;margin:2px 0 10px;display:flex;flex-direction:column;gap:8px">
+  <input id="cf-q" aria-label="Search units" placeholder="Search name, id or suburb" value="${esc(CF.q)}" oninput="CF.q=this.value;clearTimeout(window._cfT);window._cfT=setTimeout(()=>{render();const i=$('cf-q');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}},250)" style="${sel};flex:none">
+  <div style="display:flex;gap:8px">
+   <select id="cf-site" aria-label="City" onchange="CF.set('site',this.value)" style="${sel}">${opt("","All cities",CF.site)}${CF.sites.map(x=>opt(x.site_id,String(x.name).replace(/\s*\(dummy data\)/i,""),CF.site)).join("")}</select>
+   <select id="cf-sub" aria-label="Suburb" onchange="CF.set('suburb',this.value)" style="${sel}">${opt("","All suburbs",CF.suburb)}${CF.subs().map(x=>opt(x,x,CF.suburb)).join("")}</select>
+   <select id="cf-st" aria-label="Status" onchange="CF.set('status',this.value)" style="${sel}">${opt("","Any status",CF.status)}${opt("live","Reporting",CF.status)}${opt("stale","Quiet",CF.status)}${opt("offline","Offline",CF.status)}</select>
+  </div>
+  ${CF.active()?`<div style="font-size:12.5px;font-weight:700;color:var(--green);cursor:pointer" onclick="CF.q='';CF.site='';CF.suburb='';CF.status='';${Store.state.screen.name==="perf"?"Perf.load()":"render()"}">Clear filters</div>`:""}
+ </div>`;}
+/* ---- CDS map: filtered units, coloured by status ---- */
+let cmap=null,cmapMarkers=[],cmapView=null;
+function cdsMapUnits(){return Fleet.units.filter(u=>u.lat!=null&&u.age_s!=null&&CF.match(u));}
+function drawCdsPins(){
+ if(!cmap)return; cmapMarkers.forEach(m=>m.remove()); cmapMarkers=[];
+ const b=cmap.getBounds(), z=cmap.getZoom(), cell=z>=16?0:0.0016*Math.pow(2,14-z), groups=new Map();
+ cdsMapUnits().filter(u=>u.lat<=b.getNorth()&&u.lat>=b.getSouth()&&u.lon<=b.getEast()&&u.lon>=b.getWest()).forEach(u=>{
+   const k=cell?Math.round(u.lat/cell)+":"+Math.round(u.lon/(cell*1.3)):u.unit_id; if(!groups.has(k))groups.set(k,[]); groups.get(k).push(u);});
+ const col=f=>f==="live"?"var(--green)":f==="stale"?"var(--amber)":"var(--grey)";
+ [...groups.values()].slice(0,500).forEach(g=>{
+   const lat=g.reduce((a,u)=>a+u.lat,0)/g.length, lon=g.reduce((a,u)=>a+u.lon,0)/g.length, el=document.createElement("div");
+   if(g.length===1){const u=g[0],f=CF.st(u);
+     el.innerHTML=`<div role="button" tabindex="0" title="${esc(u.label||u.unit_id)}" style="background:${col(f)};color:#fff;border:2px solid #fff;border-radius:9px;padding:2px 7px;font-size:12px;font-weight:800;box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:pointer">${u.filled||0}/6</div>`;
+     el.onclick=e=>{e.stopPropagation();Store.go('fleetunit',{id:u.unit_id});Fleet.loadDetail(u.unit_id);};}
+   else{const off=g.filter(u=>CF.st(u)==="offline").length, quiet=g.filter(u=>CF.st(u)==="stale").length;
+     el.innerHTML=`<div role="button" tabindex="0" style="background:${off?"var(--grey)":quiet?"var(--amber)":"var(--green)"};color:#fff;border:2px solid #fff;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:800;box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:pointer">${g.length} units${off?` · ${off} off`:""}</div>`;
+     el.onclick=e=>{e.stopPropagation();cmap.easeTo({center:[lon,lat],zoom:Math.min(17,cmap.getZoom()+2)});};}
+   cmapMarkers.push(new maplibregl.Marker({element:el,anchor:"center"}).setLngLat([lon,lat]).addTo(cmap));});
+}
+function mountCdsMap(){
+ const el=$("cmap"); if(!el||!window.maplibregl)return;
+ if(cmap){cmapView={c:cmap.getCenter(),z:cmap.getZoom()};cmap.remove();cmap=null;}
+ const us=cdsMapUnits();
+ cmap=new maplibregl.Map({container:el,style:tileUrl(),attributionControl:{compact:true},dragRotate:false,pitchWithRotate:false,
+   center:cmapView?cmapView.c:(us[0]?[us[0].lon,us[0].lat]:[147.3,-35]),zoom:cmapView?cmapView.z:5});
+ cmap.touchZoomRotate.disableRotation();
+ if(!cmapView&&us.length>1){const bb=us.reduce((b,u)=>b.extend([u.lon,u.lat]),new maplibregl.LngLatBounds([us[0].lon,us[0].lat],[us[0].lon,us[0].lat])); cmap.fitBounds(bb,{padding:40,maxZoom:15,duration:0});}
+ cmap.on("load",drawCdsPins); cmap.on("moveend",()=>{cmapView={c:cmap.getCenter(),z:cmap.getZoom()};drawCdsPins();});
+}
+Views.cdsmap=()=>{
+ const us=cdsMapUnits(), live=us.filter(u=>CF.st(u)==="live").length, quiet=us.filter(u=>CF.st(u)==="stale").length, off=us.length-live-quiet;
+ setTimeout(()=>{ if(cmap&&$("cmap")&&cmap.getContainer()===$("cmap")){drawCdsPins();} else { cmapView=null; mountCdsMap(); } },0);
+ return `
+ <div class="sbspace"></div>
+ <div class="apphead"><div class="t">Map</div>${themeBtn()}</div>
+ <div class="scroll" style="display:flex;flex-direction:column">
+  ${cdsFilterBar()}
+  <div class="fmeta" style="margin:0 2px 8px"><span style="color:var(--green);font-weight:700">● ${live} reporting</span> · <span style="color:var(--amber);font-weight:700">● ${quiet} quiet</span> · <span style="font-weight:700">● ${off} offline</span> · pins show slots full; tap a group to zoom</div>
+  <div id="cmap" style="flex:1;min-height:420px;border-radius:14px;overflow:hidden"></div>
+ </div>
+ ${tabbar()}`;
+};
 /* ---- Performance: best and worst units, from the database's per-hour summary (unit_performance) ---- */
 const Perf={days:30,site:null,dir:"best",rows:[],sites:[],loading:false,err:null,
  async load(){
@@ -2057,12 +2130,13 @@ const Perf={days:30,site:null,dir:"best",rows:[],sites:[],loading:false,err:null
    try{
      if(!this.sites.length){this.sites=await apiGet("sites?select=site_id,name");}
      const to=new Date(), from=new Date(Date.now()-this.days*86400e3);
-     const q=`rpc/unit_performance?p_from=${encodeURIComponent(from.toISOString())}&p_to=${encodeURIComponent(to.toISOString())}${this.site?`&p_site=${encodeURIComponent(this.site)}`:""}`;
+     const site=CF.site||this.site;
+     const q=`rpc/unit_performance?p_from=${encodeURIComponent(from.toISOString())}&p_to=${encodeURIComponent(to.toISOString())}${site?`&p_site=${encodeURIComponent(site)}`:""}`;
      this.rows=publicUnits(await apiGet(q));
    }catch(e){this.err="Couldn't load the ranking. Try again in a moment.";}
    this.loading=false; if(cdsScreen())render();
  },
- sorted(){const r=[...this.rows].sort((a,b)=>(+b.per_day)-(+a.per_day)); return this.dir==="best"?r:r.reverse();},
+ sorted(){const r=[...this.rows].filter(x=>CF.match({...x,freshness:undefined})).sort((a,b)=>(+b.per_day)-(+a.per_day)); return this.dir==="best"?r:r.reverse();},
  csv(){const cols=["rank","unit_id","label","site_id","suburb","containers","collections","days_reporting","containers_per_day","last_heard"];
    const rows=this.sorted().map((r,i)=>({rank:i+1,unit_id:r.unit_id,label:r.label,site_id:r.site_id,suburb:r.suburb,containers:r.added,collections:r.emptied,days_reporting:r.days,containers_per_day:r.per_day,last_heard:r.last_heard}));
    exportFile(`binbypass-${this.site||"all"}-performance-${this.days}d-${stamp()}.csv`,toCsv(cols,rows),"text/csv");}
@@ -2078,8 +2152,7 @@ Views.perf=()=>{
   ${dummyNote(P.rows.map(r=>r.site_id))}
   <div class="k" style="margin:2px 2px 6px">Period</div>
   <div class="chips" style="padding:0 0 4px">${[[7,"7 days"],[30,"30 days"],[90,"90 days"]].map(([d,l])=>`<div class="chip ${P.days===d?"on":""}" onclick="Perf.days=${d};Perf.load()">${l}</div>`).join("")}</div>
-  <div class="k" style="margin:10px 2px 6px">City</div>
-  <div class="chips" style="padding:0 0 4px;flex-wrap:wrap"><div class="chip ${!P.site?"on":""}" onclick="Perf.site=null;Perf.load()">All</div>${P.sites.filter(x=>x.site_id!=="bench").map(x=>`<div class="chip ${P.site===x.site_id?"on":""}" onclick="Perf.site='${esc(x.site_id)}';Perf.load()">${esc(siteName(x.site_id))}</div>`).join("")}</div>
+  <div style="margin-top:10px">${cdsFilterBar()}</div>
   <div class="seg" style="margin-top:10px">${[["best","Best first"],["worst","Worst first"]].map(([k,l])=>`<div class="${P.dir===k?"on":""}" onclick="Perf.dir='${k}';render()">${l}</div>`).join("")}</div>
   ${P.err?`<div class="cerr">${esc(P.err)}</div>`:P.loading&&!rows.length?`<div class="cnote">Loading…</div>`:""}
   <div class="card" style="padding:12px 14px;margin-top:10px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
