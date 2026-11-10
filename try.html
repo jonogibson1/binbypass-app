@@ -158,8 +158,9 @@ const ago = (iso) => { const s = (Date.now() - Date.parse(iso)) / 1000; if (s < 
 const ROLE = { collector: "collector", cds: "CDS", council: "council", other: "" };
 
 /* tell a parent page (Squarespace) how tall we are, so its iframe can fit us */
-function tellHeight() { try { parent.postMessage({ bbTryHeight: document.documentElement.scrollHeight }, "*"); } catch (e) {} }
-new ResizeObserver(tellHeight).observe(document.body);
+/* content height, not the frame's: documentElement.scrollHeight never drops below the frame's own height */
+function tellHeight() { try { const w = document.querySelector(".wrap"); parent.postMessage({ bbTryHeight: Math.ceil(w.getBoundingClientRect().height) + 8 }, "*"); } catch (e) {} }
+new ResizeObserver(tellHeight).observe(document.querySelector(".wrap"));
 
 function showGate(msg) { $("main").hidden = true; $("gate").hidden = false; const e = $("g-err"); e.hidden = !msg; e.textContent = msg || ""; }
 function showMain() {
