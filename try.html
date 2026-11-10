@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Try the Bin Bypass app</title>
+<meta name="description" content="Try the Bin Bypass app and tell us what you'd like it to do.">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<style>
+:root{--bg:#F6F5F1;--surface:#FFFFFF;--ink:#17211D;--muted:#5B6663;--line:#E6E4DC;--green:#166534;--cta:#1B7A3F;--on:#FFFFFF;--tint:#E2F1E7;
+  --amber-tint:#FAEEDC;--red:#B42318;--shadow:0 1px 3px rgba(23,33,29,.08),0 6px 18px rgba(23,33,29,.07)}
+@media (prefers-color-scheme:dark){:root{--bg:#0E1411;--surface:#182019;--ink:#EFF4F1;--muted:#9AA8A1;--line:#263029;--green:#28A55D;--cta:#28A55D;--on:#07130B;
+  --tint:rgba(40,165,93,.16);--amber-tint:rgba(208,128,4,.16);--red:#F97066;--shadow:0 1px 3px rgba(0,0,0,.5),0 6px 18px rgba(0,0,0,.45)}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+[hidden]{display:none!important}
+.wrap{max-width:1040px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:26px;letter-spacing:-.02em;margin:0 0 4px} h2{font-size:18px;margin:0 0 6px} p{margin:0}
+.sub{color:var(--muted);font-size:14px}
+.card{background:var(--surface);border-radius:16px;box-shadow:var(--shadow);padding:18px;margin:0 0 14px}
+.note{background:var(--amber-tint);border-radius:12px;padding:10px 13px;font-size:13px;margin:12px 0 0}
+label{display:block;font-size:13px;font-weight:600;margin:12px 0 5px}
+input[type=text],input[type=email],select,textarea{width:100%;font:inherit;font-size:16px;padding:11px 12px;border-radius:11px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink)}
+textarea{min-height:84px;resize:vertical}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+.check{display:flex;gap:9px;align-items:flex-start;margin-top:12px;font-size:13.5px}
+.check input{margin-top:3px;width:18px;height:18px;accent-color:var(--cta)}
+.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:12px;padding:12px 18px;font:inherit;font-weight:700;cursor:pointer;background:var(--cta);color:var(--on)}
+.btn.sec{background:var(--surface);color:var(--ink);border:1.5px solid var(--line)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #2563EB;outline-offset:2px}
+.err{color:var(--red);font-size:13px;font-weight:600;margin-top:8px}
+.ok{color:var(--green);font-size:13px;font-weight:600;margin-top:8px}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.appbox{display:grid;grid-template-columns:minmax(0,440px) 1fr;gap:18px;align-items:start}
+.frame{width:100%;height:820px;border:0;border-radius:20px;box-shadow:var(--shadow);background:var(--surface)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.list{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+.item{border-top:1px solid var(--line);padding-top:9px;display:flex;gap:10px;align-items:flex-start}
+.item .t{flex:1;min-width:0;white-space:pre-wrap;word-wrap:break-word}
+.item .m{font-size:12px;color:var(--muted);margin-top:2px}
+.vote{flex:none;min-width:52px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:5px 8px;font:inherit;font-weight:700;font-size:13px;cursor:pointer;text-align:center}
+.vote[aria-pressed=true]{background:var(--cta);color:var(--on);border-color:transparent}
+.brand{display:flex;align-items:center;gap:10px;margin:0 0 12px;font-weight:800}
+.mark{width:34px;height:34px;border-radius:10px;background:var(--cta);color:var(--on);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800}
+.steps{margin:10px 0 0;padding-left:18px;color:var(--muted);font-size:14px}
+@media (max-width:820px){.appbox,.cols{grid-template-columns:1fr}.frame{height:760px}}
+@media (max-width:520px){.row2{grid-template-columns:1fr}h1{font-size:23px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><span class="mark">BB</span><span>Bin Bypass</span></div>
+
+  <!-- Gate -->
+  <section id="gate" class="card" hidden aria-labelledby="g-h">
+    <h1 id="g-h">Try the Bin Bypass app</h1>
+    <p class="sub">An early preview of the app collectors, CDS operators and councils will use. Enter your email to open it, then tell us what works and what you'd like it to do.</p>
+    <form id="g-form" novalidate>
+      <label for="g-email">Email <span class="sub">(required)</span></label>
+      <input id="g-email" type="email" autocomplete="email" required maxlength="254">
+      <div class="row2">
+        <div><label for="g-name">Name</label><input id="g-name" type="text" autocomplete="name" maxlength="120"></div>
+        <div><label for="g-org">Organisation</label><input id="g-org" type="text" autocomplete="organization" maxlength="160"></div>
+      </div>
+      <label for="g-role">You are</label>
+      <select id="g-role">
+        <option value="">Choose one (optional)</option>
+        <option value="collector">A container collector</option>
+        <option value="cds">With a container deposit scheme (CDS) operator</option>
+        <option value="council">With a council</option>
+        <option value="other">Something else</option>
+      </select>
+      <div class="hp" aria-hidden="true"><label for="g-web">Website</label><input id="g-web" type="text" tabindex="-1" autocomplete="off"></div>
+      <div class="check"><input id="g-updates" type="checkbox"><label for="g-updates" style="margin:0;font-weight:400">Send me occasional news about Bin Bypass. You can unsubscribe at any time.</label></div>
+      <p class="err" id="g-err" role="alert" hidden></p>
+      <p style="margin-top:14px"><button class="btn" id="g-go" type="submit">Open the app</button></p>
+      <p class="sub" style="font-size:12.5px;margin-top:12px">We use your email to follow up on your feedback, and for news only if you tick the box. We don't sell or share your details. To be removed, email <a href="mailto:jonathan@binbypass.com">jonathan@binbypass.com</a>.</p>
+    </form>
+  </section>
+
+  <!-- App + feedback -->
+  <div id="main" hidden>
+    <section class="card">
+      <h1>Bin Bypass app preview</h1>
+      <p class="sub">Use it like a collector (find units with containers ready, plan a run, cash in) or switch to CDS / Council at the top to see fleet health, live reporting and data downloads.</p>
+      <p class="note"><b>Dummy data.</b> The units in Hobart and Brisbane are made-up test units for testing the server and the app at scale. They are not real collections.</p>
+    </section>
+    <div class="appbox">
+      <div>
+        <iframe class="frame" id="app" title="Bin Bypass app" allow="geolocation; clipboard-write; web-share" loading="lazy"></iframe>
+        <p class="sub" style="margin-top:8px;font-size:13px"><a id="full" target="_blank" rel="noopener">Open the app full screen ↗</a> · on a phone, use “Add to Home Screen” there to keep it.</p>
+      </div>
+      <div>
+        <section class="card">
+          <h2>Things to try</h2>
+          <ol class="steps">
+            <li>Tap 📍 on the map and set your suburb. Value counts only units within 50 km.</li>
+            <li>Open a unit to see its six slots and history.</li>
+            <li>Plan a route on the Walk tab and end it at a refund point.</li>
+            <li>Switch to CDS / Council and download data by city, suburb or unit.</li>
+          </ol>
+        </section>
+        <section class="card">
+          <h2>Tell us what you think</h2>
+          <form id="c-form" novalidate>
+            <label for="c-text" class="sub" style="font-weight:400;margin-top:4px">Comments show on this page with your first name.</label>
+            <textarea id="c-text" maxlength="1000" placeholder="What works, what doesn't, what's confusing…"></textarea>
+            <div class="hp" aria-hidden="true"><input id="c-web" type="text" tabindex="-1" autocomplete="off"></div>
+            <p style="margin-top:8px"><button class="btn" id="c-go" type="submit">Post comment</button></p>
+            <p id="c-msg" role="status" hidden></p>
+          </form>
+        </section>
+      </div>
+    </div>
+
+    <div class="cols" style="margin-top:4px">
+      <section class="card" aria-labelledby="f-h">
+        <h2 id="f-h">Features you'd like</h2>
+        <p class="sub">Suggest one, or vote for the ones you want most.</p>
+        <form id="f-form" novalidate style="margin-top:8px">
+          <label for="f-text" class="hp">Feature</label>
+          <textarea id="f-text" maxlength="1000" placeholder="I'd like the app to…" style="min-height:64px"></textarea>
+          <div class="hp" aria-hidden="true"><input id="f-web" type="text" tabindex="-1" autocomplete="off"></div>
+          <p style="margin-top:8px"><button class="btn" id="f-go" type="submit">Suggest it</button></p>
+          <p id="f-msg" role="status" hidden></p>
+        </form>
+        <div class="list" id="f-list"></div>
+      </section>
+      <section class="card" aria-labelledby="cm-h">
+        <h2 id="cm-h">Comments</h2>
+        <div class="list" id="c-list"></div>
+      </section>
+    </div>
+    <p class="sub" style="text-align:center;font-size:12.5px;margin-top:6px">Signed in as <span id="who"></span> · <a href="#" id="out">not you?</a></p>
+  </div>
+</div>
+
+<script>
+(() => {
+"use strict";
+const API = { base: "https://kyjrqpibtncvhxwcaovx.supabase.co/rest/v1", key: "sb_publishable_Q-XPiRdglnQscTd1Alh5UQ_hs4TWIsc" };
+const $ = (id) => document.getElementById(id);
+const store = { get(k){try{return localStorage.getItem(k)}catch(e){return null}}, set(k,v){try{localStorage.setItem(k,v)}catch(e){}}, del(k){try{localStorage.removeItem(k)}catch(e){}} };
+const TOK = "bb_try_token", WHO = "bb_try_who";
+async function rpc(name, body) {
+  const r = await fetch(`${API.base}/rpc/${name}`, { method: "POST", cache: "no-store",
+    headers: { apikey: API.key, Authorization: "Bearer " + API.key, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error("server " + r.status);
+  return r.json();
+}
+const h = (tag, attrs, ...kids) => { const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) { if (v == null || v === false) continue; if (k === "text") e.textContent = v; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v === true ? "" : v); }
+  for (const k of kids.flat()) if (k != null) e.append(k instanceof Node ? k : document.createTextNode(String(k)));
+  return e; };
+const ago = (iso) => { const s = (Date.now() - Date.parse(iso)) / 1000; if (s < 90) return "just now"; if (s < 5400) return Math.round(s / 60) + " min ago";
+  if (s < 129600) return Math.round(s / 3600) + " h ago"; return new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short" }); };
+const ROLE = { collector: "collector", cds: "CDS", council: "council", other: "" };
+
+/* tell a parent page (Squarespace) how tall we are, so its iframe can fit us */
+function tellHeight() { try { parent.postMessage({ bbTryHeight: document.documentElement.scrollHeight }, "*"); } catch (e) {} }
+new ResizeObserver(tellHeight).observe(document.body);
+
+function showGate(msg) { $("main").hidden = true; $("gate").hidden = false; const e = $("g-err"); e.hidden = !msg; e.textContent = msg || ""; }
+function showMain() {
+  $("gate").hidden = true; $("main").hidden = false;
+  $("who").textContent = store.get(WHO) || "you";
+  if (!$("app").src) { $("app").src = "index.html"; $("full").href = "index.html"; }
+  board();
+}
+$("g-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const email = $("g-email").value.trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { showGate("Please enter a valid email address."); $("g-email").focus(); return; }
+  $("g-go").disabled = true;
+  try {
+    const r = await rpc("try_join", { p_email: email, p_name: $("g-name").value, p_org: $("g-org").value, p_role: $("g-role").value,
+                                      p_updates: $("g-updates").checked, p_hp: $("g-web").value });
+    if (r.error) { showGate(r.error === "busy" ? "Lots of people are signing up right now. Try again in a few minutes." : "Please check your email address."); return; }
+    store.set(TOK, r.token); store.set(WHO, $("g-name").value.trim().split(" ")[0] || email);
+    showMain();
+  } catch (e) { showGate("Can't reach the server. Check your connection and try again."); }
+  finally { $("g-go").disabled = false; }
+});
+$("out").addEventListener("click", (e) => { e.preventDefault(); store.del(TOK); store.del(WHO); showGate(""); });
+
+async function post(kind, textEl, hpEl, btn, msgEl) {
+  const text = textEl.value.trim(); msgEl.hidden = false;
+  if (text.length < 2) { msgEl.className = "err"; msgEl.textContent = "Write a little more first."; return; }
+  btn.disabled = true;
+  try {
+    const r = await rpc("try_post", { p_token: store.get(TOK), p_kind: kind, p_text: text, p_hp: hpEl.value });
+    if (r.error === "signin") { showGate("Please enter your email again."); return; }
+    if (r.error) { msgEl.className = "err"; msgEl.textContent = r.error === "slow" ? "That's a lot of posts in an hour. Try again a bit later." : "That didn't go through. Try again."; return; }
+    textEl.value = ""; msgEl.className = "ok"; msgEl.textContent = kind === "feature" ? "Added. Thanks!" : "Posted. Thanks!"; board();
+  } catch (e) { msgEl.className = "err"; msgEl.textContent = "Can't reach the server."; }
+  finally { btn.disabled = false; }
+}
+$("c-form").addEventListener("submit", (e) => { e.preventDefault(); post("comment", $("c-text"), $("c-web"), $("c-go"), $("c-msg")); });
+$("f-form").addEventListener("submit", (e) => { e.preventDefault(); post("feature", $("f-text"), $("f-web"), $("f-go"), $("f-msg")); });
+
+async function vote(id, btn) {
+  btn.disabled = true;
+  try { const r = await rpc("try_vote", { p_token: store.get(TOK), p_id: id }); if (r.error === "signin") { showGate("Please enter your email again."); return; } board(); }
+  catch (e) {} finally { btn.disabled = false; }
+}
+async function board() {
+  let b; try { b = await rpc("try_board", { p_token: store.get(TOK) }); } catch (e) { return; }
+  const fl = $("f-list"), cl = $("c-list"); fl.textContent = ""; cl.textContent = "";
+  if (!b.features.length) fl.append(h("p", { class: "sub" }, "No suggestions yet. Be the first."));
+  for (const f of b.features) fl.append(h("div", { class: "item" },
+    h("button", { class: "vote", type: "button", "aria-pressed": f.voted ? "true" : "false", "aria-label": (f.voted ? "Remove your vote for: " : "Vote for: ") + f.text,
+                  onclick: (e) => vote(f.id, e.currentTarget) }, "▲ " + f.votes),
+    h("div", { class: "t" }, f.text, h("div", { class: "m" }, `${f.who} · ${ago(f.at)}`))));
+  if (!b.comments.length) cl.append(h("p", { class: "sub" }, "No comments yet."));
+  for (const c of b.comments) cl.append(h("div", { class: "item" },
+    h("div", { class: "t" }, c.text, h("div", { class: "m" }, `${c.who}${ROLE[c.role] ? " (" + ROLE[c.role] + ")" : ""} · ${ago(c.at)}`))));
+}
+if (store.get(TOK)) showMain(); else showGate("");
+setInterval(() => { if (!$("main").hidden) board(); }, 60000);
+})();
+</script>
+</body>
+</html>

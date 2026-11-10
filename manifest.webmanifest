@@ -1,0 +1,16 @@
+{
+  "name": "Bin Bypass",
+  "short_name": "Bin Bypass",
+  "description": "Find Bin Bypass units with containers ready to collect, plan a run and cash in.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F1F0EA",
+  "theme_color": "#166534",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
