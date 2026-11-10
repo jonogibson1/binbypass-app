@@ -96,6 +96,16 @@ textarea{min-height:84px;resize:vertical}
       </div>
       <div class="side">
         <section class="card">
+          <h2>Your location</h2>
+          <p class="sub" style="font-size:13.5px">Set where you collect and the app shows units and value near you.</p>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <input id="loc-q" type="text" placeholder="Suburb or address" aria-label="Suburb or address" autocomplete="off" style="flex:1;min-width:0">
+            <button class="btn" id="loc-go" type="button">Find</button>
+          </div>
+          <div class="list" id="loc-res" style="margin-top:6px"></div>
+          <p id="loc-now" class="ok" hidden></p>
+        </section>
+        <section class="card">
           <h2>Things to try</h2>
           <ol class="steps">
             <li>Tap 📍 on the map and set your suburb. Value counts only units within 50 km.</li>
@@ -216,6 +226,26 @@ async function board() {
   for (const c of b.comments) cl.append(h("div", { class: "item" },
     h("div", { class: "t" }, c.text, h("div", { class: "m" }, `${c.who}${ROLE[c.role] ? " (" + ROLE[c.role] + ")" : ""} · ${ago(c.at)}`))));
 }
+/* location box: search Australia (OpenStreetMap / Photon), then move the app there */
+async function locFind() {
+  const q = $("loc-q").value.trim(), box = $("loc-res"); box.textContent = "";
+  if (q.length < 3) { box.append(h("p", { class: "sub" }, "Type at least 3 letters.")); return; }
+  box.append(h("p", { class: "sub" }, "Searching…"));
+  try {
+    const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=en&bbox=112,-44.5,154.5,-9.5`);
+    const j = await r.json(); box.textContent = "";
+    const hits = (j.features || []).filter(f => (f.properties.country || "") === "Australia").map(f => { const p = f.properties;
+      return { name: [...new Set([p.name, p.city || p.district || p.county, p.state].filter(Boolean))].join(", "), lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] }; });
+    if (!hits.length) { box.append(h("p", { class: "sub" }, "Nothing found. Try another spelling.")); return; }
+    for (const x of hits) box.append(h("button", { type: "button", class: "btn sec", style: "justify-content:flex-start;width:100%;font-weight:600", onclick: () => locSet(x) }, x.name));
+  } catch (e) { box.textContent = ""; box.append(h("p", { class: "sub" }, "Couldn't reach the place search. Set it inside the app with 📍.")); }
+}
+function locSet(x) {
+  const f = $("app"); try { f.contentWindow.postMessage({ bbSetLoc: true, lat: x.lat, lng: x.lng, label: x.name }, location.origin); } catch (e) {}
+  $("loc-res").textContent = ""; $("loc-q").value = ""; const n = $("loc-now"); n.hidden = false; n.textContent = "App moved to " + x.name + ".";
+}
+$("loc-go").addEventListener("click", locFind);
+$("loc-q").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); locFind(); } });
 if (store.get(TOK)) showMain(); else showGate("");
 setInterval(() => { if (!$("main").hidden) board(); }, 60000);
 })();

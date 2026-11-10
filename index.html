@@ -2602,6 +2602,9 @@ Feed.subscribe(ev=>{
    setTimeout(()=>$("notif").classList.remove("show"),7000);
  }
 });
+/* The "Try the app" page around the app can set the location (postMessage from the same site) */
+window.addEventListener("message",e=>{const d=e.data||{}; if(d.bbSetLoc&&isFinite(d.lat)&&isFinite(d.lng)&&(e.origin===location.origin)){
+  if(Store.state.appMode!=="collector")AppMode.set("collector"); setManualLoc(+d.lat,+d.lng,String(d.label||"Chosen spot").slice(0,80)); if(Store.state.screen.name!=="map")Store.tabTo("map");}});
 /* ============================ ACCESSIBILITY ============================
    Tappable divs become keyboard- and screen-reader-usable buttons; closed
    sheets and dialogs are hidden from assistive tech. Runs after DOM changes. */
