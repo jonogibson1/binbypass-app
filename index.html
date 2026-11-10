@@ -155,6 +155,11 @@ body{background:var(--bg);color:var(--page-ink);
 .ob h2{font-size:25px;font-weight:800;letter-spacing:-.4px;text-align:center;line-height:1.2}
 .ob p{font-size:14.5px;color:var(--s-muted);line-height:1.5;text-align:center;margin-top:9px}
 .dots{display:flex;gap:6px;justify-content:center;margin:18px 0 8px}
+[role=button]:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.legend{display:none} body.showkey .legend{display:block}
+.legendbtn{position:absolute;top:10px;left:10px;z-index:20;width:34px;height:34px;border-radius:50%;border:1px solid var(--s-line);background:var(--s-surface);color:var(--s-ink);font-size:17px;cursor:pointer;box-shadow:var(--s-shadow)}
+body.showkey .legendbtn{left:auto;right:10px}
+.chip.locchip{background:var(--s-surface);border:1.5px solid var(--green);color:var(--green);font-weight:700}
 .obpick{display:flex;gap:13px;align-items:flex-start;margin-top:12px;padding:15px 16px;border-radius:16px;border:1.5px solid var(--s-line);background:var(--s-surface);cursor:pointer;text-align:left}
 .obpick:active,.obpick:hover{border-color:var(--green)}
 .obpick .ic{font-size:26px;line-height:1}
@@ -621,7 +626,7 @@ function liveSites(units,sites,wk,meta){
 function setHome(lat,lng,src){
  HOME.lat=lat;HOME.lng=lng;HOME_SRC=src;
  SITES.forEach(s=>{s.km=kmTo(s.ll);});
- if(lmap&&lmeMarker)lmeMarker.setLngLat([lng,lat]);
+ if(lmap&&lmeMarker)lmeMarker.setLngLat([lng,lat]); else if(lmap&&hasLoc())lmeMarker=mkMarker('<div class="me"></div>',HOME,9);
  if(["value","myunits","run","unit","refundlist"].includes(Store.state.screen.name))render();
  else if(Store.state.screen.name==="walk"){Walk.plan=null;planWalk();}
 }
@@ -683,7 +688,7 @@ async function locSearchOnline(){
 }
 function openLocation(){
  modal(`<div style="font-size:16.5px;font-weight:800">Your location</div>
-  <div style="font-size:13px;color:var(--s-muted);margin-top:6px">Value and runs count units within ${RADIUS_KM} km of here. Now: <b style="color:var(--s-ink)">${esc(locName())}</b></div>
+  <div style="font-size:13px;color:var(--s-muted);margin-top:6px">Value and runs count units within ${RADIUS_KM} km of you.${hasLoc()?` Now: <b style="color:var(--s-ink)">${esc(locName())}</b>`:" Search your suburb, or use where you are."}</div>
   <input id="loc-q" placeholder="Search a suburb or city" autocomplete="off" oninput="locSearch(this.value)" onkeydown="if(event.key==='Enter')locSearchOnline()" style="margin-top:12px;width:100%;padding:13px 14px;border-radius:12px;border:1.5px solid var(--s-line);background:var(--s-bg);color:var(--s-ink);font-size:15px;font-family:inherit;outline:none">
   <div id="loc-res" style="max-height:240px;overflow:auto;margin-top:4px"></div>
   <div style="display:flex;gap:9px;margin-top:12px;flex-wrap:wrap">
@@ -724,7 +729,14 @@ function drawLeafletPins(){
  lmapMarkers.forEach(m=>m.remove()); lmapMarkers=[];
  const {showS,showR}=mapPins();
  showR.forEach(r=>lmapMarkers.push(mkMarker(`<div class="pin-r ${r.type==="RVM"?"":"depot"} ${isOpen(r)?"":"closed"}" onclick="event.stopPropagation();sheetRP('${r.id}')">${r.type==="RVM"?I.recy:I.depot}</div>`,r.ll,1)));
- showS.forEach(s=>{const fr=freshness(s);lmapMarkers.push(mkMarker(`<div class="pin-u ${fr==="stale"?"stale":fr==="offline"?"off":""}" id="pin-${s.id}" onclick="event.stopPropagation();sheetSite('${s.id}')"><div class="b">${pinVal(s)}</div><div class="tip"></div></div>`,s.ll,5));});
+ /* group units that would overlap at this zoom: one pin with the group's total, tap to zoom in */
+ const z=lmap.getZoom(), cell=z>=16?0:0.0016*Math.pow(2,14-z), groups=new Map();
+ showS.forEach(s=>{const k=cell?Math.round(s.ll.lat/cell)+":"+Math.round(s.ll.lng/(cell*1.3)):s.id; if(!groups.has(k))groups.set(k,[]); groups.get(k).push(s);});
+ groups.forEach(g=>{
+   if(g.length===1){const s=g[0],fr=freshness(s);lmapMarkers.push(mkMarker(`<div class="pin-u ${fr==="stale"?"stale":fr==="offline"?"off":""}" id="pin-${s.id}" onclick="event.stopPropagation();sheetSite('${s.id}')"><div class="b">${pinVal(s)}</div><div class="tip"></div></div>`,s.ll,5));return;}
+   const ll={lat:g.reduce((a,s)=>a+s.ll.lat,0)/g.length,lng:g.reduce((a,s)=>a+s.ll.lng,0)/g.length}, v=g.reduce((a,s)=>a+ready(s),0)*CENTS/100;
+   const live=g.some(s=>freshness(s)==="live");
+   lmapMarkers.push(mkMarker(`<div class="pin-u ${live?"":"stale"}" style="cursor:pointer" title="${g.length} units" onclick="event.stopPropagation();lmap.easeTo({center:[${ll.lng},${ll.lat}],zoom:Math.min(17,lmap.getZoom()+2)})"><div class="b">${v<10?"$"+v.toFixed(2):"$"+Math.round(v)}<span style="opacity:.75;font-weight:600"> · ${g.length}</span></div><div class="tip"></div></div>`,ll,5));});
 }
 function mountLeaflet(){
  const el=$("lmap"); if(!el||!window.maplibregl)return false;
@@ -738,7 +750,7 @@ function mountLeaflet(){
  if(!lmapView&&pts.length>1){const bb=pts.reduce((b,p)=>b.extend(p),new maplibregl.LngLatBounds(pts[0],pts[0]));
    const sp=bb.getNorthEast().distanceTo(bb.getSouthWest());
    if(sp>150)lmap.fitBounds(bb,{padding:80,maxZoom:16,duration:0}); else lmap.setZoom(16);}
- lmeMarker=mkMarker('<div class="me"></div>',HOME,9);
+ lmeMarker=hasLoc()?mkMarker('<div class="me"></div>',HOME,9):null;   /* no "you" dot until we know where you are */
  drawLeafletPins();
  lmap.on("moveend",()=>{lmapView={c:lmap.getCenter(),z:lmap.getZoom()};
    clearTimeout(lmapRedraw); lmapRedraw=setTimeout(drawLeafletPins,150);});   /* refund points follow the view */
@@ -863,8 +875,8 @@ const $=id=>document.getElementById(id);
 const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;");
 const escA=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");   /* attribute-safe */
 function tabbar(){
- const t=Store.state.tab, tab=(k,ic,l)=>`<div class="tab ${t===k?'on':''}" onclick="Store.tabTo('${k}')${k==='activity'?';Fleet.loadAct()':k==='export'?';expCount()':''}">${ic}${l}</div>`;
- if(Store.state.appMode==="cds")return `<div class="tabbar">${tab('fleet',I.units,'Fleet')}${tab('activity',I.clock.replace(/width="15" height="15"/,''),'Activity')}${tab('export',I.share.replace(/width="15" height="15"/,''),'Data')}</div>`;
+ const t=Store.state.tab, tab=(k,ic,l)=>`<div class="tab ${t===k?'on':''}" onclick="Store.tabTo('${k}')${k==='activity'?';Fleet.loadAct()':k==='export'?';expCount()':k==='perf'?';Perf.load()':''}">${ic}${l}</div>`;
+ if(Store.state.appMode==="cds")return `<div class="tabbar">${tab('fleet',I.units,'Fleet')}${tab('perf',I.clock.replace(/width="15" height="15"/,''),'Rank')}${tab('activity',I.clock.replace(/width="15" height="15"/,''),'Activity')}${tab('export',I.share.replace(/width="15" height="15"/,''),'Data')}</div>`;
  return `<div class="tabbar">${tab('map',I.map,'Map')}${tab('walk',I.walk,'Walk')}${tab('value',I.val,'Value')}${tab('myunits',I.units,'Saved')}</div>`;
 }
 /* Root screens carry the Collector | CDS switch next to the theme button. */
@@ -875,7 +887,8 @@ function modal(html){$("modal").innerHTML=html;$("modalbg").classList.add("show"
 function closeModal(){$("modalbg").classList.remove("show");}
 function statusRow(u){
  const f=freshness(u), m=minsAgo(u);
- const lbl=f==="live"?`Live ${m} min`:(f==="stale"?`Stale ${m} min`:`Offline`);
+ const ago=m<60?`${m} min`:m<2880?`${Math.round(m/60)} h`:`${Math.round(m/1440)} days`;
+ const lbl=f==="offline"?`Offline · heard ${ago} ago`:`Heard ${ago} ago`;
  return `<span class="dot ${f==="offline"?"off":f}"></span>${lbl}`;
 }
 /* ============================ VIEWS ============================ */
@@ -898,9 +911,9 @@ Views.onboarding=()=>{
     <text x="138" y="129" text-anchor="middle" font-size="21" font-weight="800" fill="var(--green-ink-on)">10c</text></svg>`,
   `<div style="width:200px;height:200px;border-radius:28px;background:var(--map-land);position:relative;overflow:hidden;border:1px solid var(--s-line)">
     <svg viewBox="0 0 210 210" style="position:absolute;inset:0"><path d="M150 0 C140 60 160 120 150 210 L210 210 L210 0 Z" fill="var(--map-water)"/><path d="M0 80 C60 72 110 86 150 78" stroke="var(--map-road)" stroke-width="5" fill="none"/><path d="M70 0 C76 80 62 150 78 210" stroke="var(--map-road)" stroke-width="5" fill="none"/></svg>
-    <div class="pin-u" style="left:30%;top:40%"><div class="b">31</div><div class="tip"></div></div>
-    <div class="pin-u" style="left:62%;top:68%"><div class="b">52</div><div class="tip"></div></div>
-    <div class="pin-u stale" style="left:72%;top:28%"><div class="b">24</div><div class="tip"></div></div></div>`,
+    <div class="pin-u" style="left:30%;top:40%"><div class="b">$0.40</div><div class="tip"></div></div>
+    <div class="pin-u" style="left:62%;top:68%"><div class="b">$1.20 · 6</div><div class="tip"></div></div>
+    <div class="pin-u stale" style="left:72%;top:28%"><div class="b">$0.20</div><div class="tip"></div></div></div>`,
   `<svg viewBox="0 0 200 190" style="width:180px">
     <rect x="48" y="18" width="104" height="150" rx="12" fill="var(--blue-tint)" stroke="var(--blue)" stroke-width="2.5"/>
     <circle cx="100" cy="70" r="24" fill="var(--blue)"/><circle cx="100" cy="70" r="15" fill="var(--s-bg)"/>
@@ -909,7 +922,7 @@ Views.onboarding=()=>{
  ];
  const copy=[
   ["Containers are money",SCHEME.live?"Most drink bottles, cans and cartons between 150 mL and 3 L are worth 10c each through your state's container deposit scheme.":"Most drink bottles, cans and cartons between 150 mL and 3 L are worth 10c each through Recycle Rewards Tasmania."],
-  ["Find full sites near you","Every Bin Bypass rack holds six containers and reports live over the mobile network. Sites host up to 20 racks, so you only travel when it's worth the trip."],
+  ["See what's ready near you","Every Bin Bypass unit holds six containers and reports over the mobile network, so the map shows what's ready before you travel."],
   ["Cash in at a refund point",SCHEME.live?`Build a run and we'll end it at an open refund point. ${REFUND_POINTS.length.toLocaleString("en-AU")} machines, depots and drop points across Queensland, NSW, Victoria, Tasmania and the ACT.`:"Build a run and we'll end it at an open refund point. 51 machines, depots and counters across Tasmania."]
  ];
  return `<div class="ob">
@@ -934,7 +947,7 @@ Views.onboarding=()=>{
      </div></div>`).join("")}
   </div></div>`;
 };
-function finishOb(){try{localStorage.setItem("bb.obDone","1")}catch(e){} AppMode.set("collector");}
+function finishOb(){try{localStorage.setItem("bb.obDone","1")}catch(e){} AppMode.set("collector"); if(!hasLoc())setTimeout(openLocation,350);}
 /* First intro screen: which side of the app. Collector carries on through the intro; CDS / council goes to the fleet. */
 function obChoose(m){
  if(m==="cds"){try{localStorage.setItem("bb.obDone","1")}catch(e){} AppMode.set("cds"); return;}
@@ -968,14 +981,15 @@ function liveMapView(){
    <div class="badge live" style="font-size:12.5px;padding:7px 12px;cursor:pointer;white-space:nowrap" id="hdr-total" onclick="${hasLoc()?"Store.tabTo('value')":"openLocation()"}">${hdrTotal()}</div>
  </div>
  <div class="chips">
-   <div class="chip on" onclick="openLocation()" title="Change your location">📍 ${esc(locName())}</div>
+   <div class="chip locchip" onclick="openLocation()" title="Change your location">📍 ${esc(locName())}</div>
    ${[["units","Bin Bypass units"],["hideEmpty","Hide empty"],["open","Open now"],["rvm","RVMs"],["depot","Depots & drops"]].map(([k,l])=>
      `<div class="chip ${f[k]?'on':''}" onclick="toggleFilter('${k}',this)">${l}</div>`).join("")}
  </div>
  <div class="maparea" id="maparea" onclick="closeSheet()">
    <div id="lmap"></div>
+   <button class="legendbtn" aria-label="Map key" onclick="document.body.classList.toggle('showkey')">ⓘ</button>
    <div class="card legend">
-     <div><span class="dot live"></span>Bin Bypass unit · $ ready</div>
+     <div><span class="dot live"></span>Bin Bypass unit · $ ready · grouped pins show units nearby</div>
      <div><span class="dot stale"></span>Not heard from lately &nbsp;<span class="dot off"></span>Offline, not counted</div>
      <div><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:var(--blue);margin-right:5px"></span>RVM &nbsp;<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--depot);margin-right:5px"></span>Depot / drop</div>
    </div>
@@ -1040,7 +1054,7 @@ function sheetSite(id){
   <div style="width:36px;height:4px;border-radius:99px;background:var(--s-line);margin:0 auto 10px"></div>
   <div class="row">
     <div><div style="font-size:16.5px;font-weight:800;letter-spacing:-.2px">${s.host}</div>
-    <div style="font-size:12.5px;color:var(--s-muted);margin-top:3px">${statusRow(s)}${rackPart(s)} · ${pctFull(s)}% full${kmPart(s.km)}</div></div>
+    <div style="font-size:12.5px;color:var(--s-muted);margin-top:3px">${statusRow(s)}${rackPart(s)} · ${ready(s)} of ${capOf(s)} full${kmPart(s.km)}</div></div>
     <div style="text-align:right"><div class="money" style="font-size:22px;${counts(s)?"":"opacity:.45"}">${uval(s)}</div><div style="font-size:11px;color:var(--s-muted)">${counts(s)?`${ready(s)} of ${capOf(s)}`:"not counted"}</div></div>
   </div>
   <div style="margin-top:10px" class="fullbar"><i style="width:${pctFull(s)}%"></i></div>
@@ -1125,7 +1139,7 @@ Views.myunits=()=>{
      <div style="display:flex;gap:11px;align-items:center;min-width:0">
        <div style="width:40px;height:40px;border-radius:12px;background:var(--green-tint);display:grid;place-items:center;font-size:18px;flex:0 0 auto">${s.hostEmoji}</div>
        <div style="min-width:0"><div style="font-size:14.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.host}</div>
-       <div style="font-size:12px;color:var(--s-muted);margin-top:2px">${statusRow(s)}${rackPart(s)} · ${pctFull(s)}% full</div></div>
+       <div style="font-size:12px;color:var(--s-muted);margin-top:2px">${statusRow(s)}${rackPart(s)} · ${ready(s)} of ${capOf(s)} full</div></div>
      </div>
      <div class="money" style="font-size:16px;${counts(s)?"":"opacity:.4"}">${uval(s)}</div>
    </div>`;
@@ -1690,6 +1704,10 @@ async function apiGet(path){
  return r.json();
 }
 async function apiAll(path,max=50000){ /* PostgREST caps a response at 1000 rows: page through */
+ if(/order=id\.asc/.test(path)&&/select=(\*|[^&]*\bid\b)/.test(path)){ /* by last id: skipping N rows gets slower each page and times out */
+   let out=[],last=0;
+   while(out.length<max){const rows=await apiGet(`${path}&id=gt.${last}&limit=1000`); out=out.concat(rows); if(rows.length<1000)break; last=rows[rows.length-1].id;}
+   return out;}
  let out=[];
  for(let off=0;out.length<max;off+=1000){
    const rows=await apiGet(`${path}&limit=1000&offset=${off}`);
@@ -1718,7 +1736,7 @@ const Fleet={
  units:[],at:0,err:null,loading:false,all:false,sort:"seen",pk24:null,suspects:[],
  detail:{id:null,win:24,rows:[],ev:[],cmds:[],loading:false,err:null,at:0},
  act:{win:168,ev:[],loading:false,err:null,at:0},
- exp:{mode:"all",unit:"*",city:null,suburb:null,picked:[],q:"",win:168,set:"packets",count:null,busy:false,meta:null},
+ exp:{mode:"all",unit:"*",city:null,suburb:null,picked:[],q:"",win:720,set:"summary",count:null,busy:false,meta:null},
  async refresh(){
    this.loading=true;
    try{ this.units=publicUnits(await apiGet("unit_live?select=*")); this.err=null; this.at=Date.now();
@@ -1753,12 +1771,18 @@ const Fleet={
  },
  async loadAct(win){
    const a=this.act; if(win)a.win=win; a.loading=true; a.err=null; if(cdsScreen())render();
-   try{ a.ev=withKinds(await apiAll(`slot_events?changed_at=gte.${sinceIso(a.win)}&order=id.asc&select=id,unit_id,slot,state,changed_at`)); a.at=Date.now(); }
-   catch(e){a.err=String(e.message||e);}
+   /* from the database's per-hour summary: complete at any fleet size (raw slot changes stopped at 50,000) */
+   try{ const from=new Date(Date.now()-a.win*3600e3), to=new Date();
+     const [hrs,per,last]=await Promise.all([
+       apiGet(`rpc/fleet_hours?p_from=${encodeURIComponent(from.toISOString())}`),
+       apiGet(`rpc/unit_performance?p_from=${encodeURIComponent(from.toISOString())}&p_to=${encodeURIComponent(to.toISOString())}`),
+       apiGet(`slot_events?order=id.desc&limit=80&select=id,unit_id,slot,state,changed_at`)]);
+     a.hrs=hrs; a.per=publicUnits(per); a.ev=last.filter(e=>!a.per.length||a.per.some(r=>r.unit_id===e.unit_id)).reverse(); a.at=Date.now(); }
+   catch(e){a.err="Couldn't load activity. Try again in a moment.";}
    a.loading=false; if(cdsScreen())render();
  }
 };
-const cdsScreen=()=>["fleet","fleetunit","activity","cds","export"].includes(Store.state.screen.name);
+const cdsScreen=()=>["fleet","fleetunit","activity","cds","export","perf"].includes(Store.state.screen.name);
 /* Passed-over containers (view slot_suspects, migration 2026-11-09): a slot
    still holding the same container after 3+ others at its unit or site were
    collected - likely contaminated or not refundable. Each container
@@ -1824,7 +1848,7 @@ function barSvg(days){ /* [{label,a,b}] a=added (green) b=emptied (blue) */
 }
 const slotDots=(sl,big)=>`<div class="sdots${big?" big":""}">${parseSlots(sl).map((v,i)=>`<i class="${v===1?"f":v===0?"e":"x"}">${big?(i+1):""}</i>`).join("")}</div>`;
 const fBadge=f=>`<span class="badge ${f==="live"?"live":f==="stale"?"stale":"grey"}">${f||"offline"}</span>`;
-const loadingLine=(l,err,at)=>err?`<div class="cerr">Couldn't load: ${esc(err)}</div>`:l?`<div class="cnote">Loading…</div>`:at?`<div class="cnote">Updated ${new Date(at).toLocaleTimeString("en-AU",{hour:"numeric",minute:"2-digit"})}</div>`:"";
+const loadingLine=(l,err,at)=>err?`<div class="cerr">${/^HTTP|statement|timeout|Failed to fetch/i.test(err)?"Couldn't load some of this. It will retry in a minute.":esc(err)}</div>`:l?`<div class="cnote">Loading…</div>`:at?`<div class="cnote">Updated ${new Date(at).toLocaleTimeString("en-AU",{hour:"numeric",minute:"2-digit"})}</div>`:"";
 
 /* ---- Fleet ---- */
 Views.fleet=()=>{
@@ -2026,34 +2050,88 @@ async function showRaw(id){
 }
 
 /* ---- Activity ---- */
+/* ---- Performance: best and worst units, from the database's per-hour summary (unit_performance) ---- */
+const Perf={days:30,site:null,dir:"best",rows:[],sites:[],loading:false,err:null,
+ async load(){
+   this.loading=true; this.err=null; if(cdsScreen())render();
+   try{
+     if(!this.sites.length){this.sites=await apiGet("sites?select=site_id,name");}
+     const to=new Date(), from=new Date(Date.now()-this.days*86400e3);
+     const q=`rpc/unit_performance?p_from=${encodeURIComponent(from.toISOString())}&p_to=${encodeURIComponent(to.toISOString())}${this.site?`&p_site=${encodeURIComponent(this.site)}`:""}`;
+     this.rows=publicUnits(await apiGet(q));
+   }catch(e){this.err="Couldn't load the ranking. Try again in a moment.";}
+   this.loading=false; if(cdsScreen())render();
+ },
+ sorted(){const r=[...this.rows].sort((a,b)=>(+b.per_day)-(+a.per_day)); return this.dir==="best"?r:r.reverse();},
+ csv(){const cols=["rank","unit_id","label","site_id","suburb","containers","collections","days_reporting","containers_per_day","last_heard"];
+   const rows=this.sorted().map((r,i)=>({rank:i+1,unit_id:r.unit_id,label:r.label,site_id:r.site_id,suburb:r.suburb,containers:r.added,collections:r.emptied,days_reporting:r.days,containers_per_day:r.per_day,last_heard:r.last_heard}));
+   exportFile(`binbypass-${this.site||"all"}-performance-${this.days}d-${stamp()}.csv`,toCsv(cols,rows),"text/csv");}
+};
+const siteName=id=>{const s=Perf.sites.find(x=>x.site_id===id);return s?String(s.name).replace(/\s*\(dummy data\)/i,""):(id||"No site");};
+Views.perf=()=>{
+ const P=Perf, rows=P.sorted(), tot=rows.reduce((a,r)=>a+(+r.added),0);
+ const avg=rows.length?rows.reduce((a,r)=>a+(+r.per_day),0)/rows.length:0;
+ return `
+ <div class="sbspace"></div>
+ <div class="apphead"><div class="t">Rank units</div>${themeBtn()}</div>
+ <div class="scroll">
+  ${dummyNote(P.rows.map(r=>r.site_id))}
+  <div class="k" style="margin:2px 2px 6px">Period</div>
+  <div class="chips" style="padding:0 0 4px">${[[7,"7 days"],[30,"30 days"],[90,"90 days"]].map(([d,l])=>`<div class="chip ${P.days===d?"on":""}" onclick="Perf.days=${d};Perf.load()">${l}</div>`).join("")}</div>
+  <div class="k" style="margin:10px 2px 6px">City</div>
+  <div class="chips" style="padding:0 0 4px;flex-wrap:wrap"><div class="chip ${!P.site?"on":""}" onclick="Perf.site=null;Perf.load()">All</div>${P.sites.filter(x=>x.site_id!=="bench").map(x=>`<div class="chip ${P.site===x.site_id?"on":""}" onclick="Perf.site='${esc(x.site_id)}';Perf.load()">${esc(siteName(x.site_id))}</div>`).join("")}</div>
+  <div class="seg" style="margin-top:10px">${[["best","Best first"],["worst","Worst first"]].map(([k,l])=>`<div class="${P.dir===k?"on":""}" onclick="Perf.dir='${k}';render()">${l}</div>`).join("")}</div>
+  ${P.err?`<div class="cerr">${esc(P.err)}</div>`:P.loading&&!rows.length?`<div class="cnote">Loading…</div>`:""}
+  <div class="card" style="padding:12px 14px;margin-top:10px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+   <div><div style="font-size:18px;font-weight:800">${rows.length.toLocaleString()} units</div><div class="fmeta">${tot.toLocaleString()} containers · ${avg.toFixed(1)} a day on average</div></div>
+   <div class="cta sub" style="padding:9px 14px;font-size:13.5px" onclick="Perf.csv()">Download CSV</div>
+  </div>
+  <div class="card" style="border-radius:14px;overflow:hidden;margin-top:10px">
+   ${rows.slice(0,200).map((r,i)=>`<div class="urow" onclick="Store.go('fleetunit',{id:'${esc(r.unit_id)}'});Fleet.loadDetail('${esc(r.unit_id)}')">
+     <div style="display:flex;gap:10px;align-items:center;min-width:0"><div style="width:30px;text-align:right;font-weight:700;color:var(--s-muted);font-variant-numeric:tabular-nums">${i+1}</div>
+      <div style="min-width:0"><div style="font-size:14.5px;font-weight:700">${esc(r.label||r.unit_id)}</div>
+      <div style="font-size:12px;color:var(--s-muted)">${esc(r.suburb||siteName(r.site_id))} · ${(+r.added).toLocaleString()} containers · ${(+r.emptied).toLocaleString()} collections · ${r.days} days</div></div></div>
+     <div style="text-align:right"><div style="font-size:16px;font-weight:800;font-variant-numeric:tabular-nums">${(+r.per_day).toFixed(1)}</div><div style="font-size:11px;color:var(--s-muted)">a day</div></div>
+   </div>`).join("")||`<div class="cnote" style="padding:12px">${P.loading?"Loading…":"No units in this period."}</div>`}
+  </div>
+  ${rows.length>200?`<div class="cnote" style="margin-top:8px">Showing 200 of ${rows.length}. The CSV has them all.</div>`:""}
+  <div class="cnote" style="margin-top:8px">Containers per day = containers deposited ÷ days the unit was reporting in the period.</div>
+ </div>
+ ${tabbar()}`;
+};
 Views.activity=()=>{
- const a=Fleet.act,ev=a.ev,days=Math.min(30,Math.max(1,Math.round(a.win/24)));
+ const a=Fleet.act, hrs=a.hrs||[], per=a.per||[], days=Math.min(30,Math.max(1,Math.round(a.win/24)));
+ const name=id=>{const u=Fleet.units.find(x=>x.unit_id===id)||per.find(x=>x.unit_id===id);return u?(u.label||id):id;};
  const buckets=[];
  for(let i=days-1;i>=0;i--){const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-i);
-   const t0=d.getTime(),t1=t0+86400e3,inD=ev.filter(e=>e.t>=t0&&e.t<t1);
-   buckets.push({label:d.toLocaleDateString("en-AU",{weekday:days<=7?"short":undefined,day:days>7?"numeric":undefined}),a:inD.filter(e=>e.kind==="added").length,b:inD.filter(e=>e.kind==="emptied").length});}
- const per={}; ev.forEach(e=>{const p=per[e.unit_id]||(per[e.unit_id]={a:0,b:0,f:0});if(e.kind==="added")p.a++;else if(e.kind==="emptied")p.b++;else if(e.kind==="fault")p.f++;});
+   const t0=d.getTime(),t1=t0+86400e3,inD=hrs.filter(h=>{const t=Date.parse(h.hour);return t>=t0&&t<t1;});
+   buckets.push({label:d.toLocaleDateString("en-AU",{weekday:days<=7?"short":undefined,day:days>7?"numeric":undefined}),a:inD.reduce((x,h)=>x+(+h.added),0),b:inD.reduce((x,h)=>x+(+h.emptied),0)});}
+ const added=hrs.reduce((x,h)=>x+(+h.added),0), emptied=hrs.reduce((x,h)=>x+(+h.emptied),0);
+ const active=per.filter(r=>+r.added||+r.emptied).sort((x,y)=>(+y.added)-(+x.added));
+ const faults=Fleet.units.reduce((x,u)=>x+(u.slots_fault||0),0);
+ const kind=e=>e.state===1?"added":e.state===0?"emptied":"fault";
  return `
  <div class="sbspace"></div>
  <div class="apphead"><div class="t">Activity</div>${themeBtn()}</div>
  <div class="scroll">
+  ${dummyNote(per.map(r=>r.site_id))}
   <div class="chips" style="padding:2px 0 8px">${[[24,"24 h"],[168,"7 d"],[720,"30 d"]].map(([h,l])=>`<div class="chip ${a.win===h?"on":""}" onclick="Fleet.loadAct(${h})">${l}</div>`).join("")}</div>
   ${loadingLine(a.loading,a.err,a.at)}
   <div class="stats">
-   <div class="st2"><b style="color:var(--green)">${ev.filter(e=>e.kind==="added").length}</b><span>containers added</span></div>
-   <div class="st2"><b style="color:var(--blue)">${ev.filter(e=>e.kind==="emptied").length}</b><span>slots emptied</span></div>
-   <div class="st2"><b style="color:var(--amber)">${ev.filter(e=>e.kind==="fault").length}</b><span>sensor faults</span></div>
-   <div class="st2"><b>${Object.keys(per).length}</b><span>units with changes</span></div>
+   <div class="st2"><b style="color:var(--green)">${added.toLocaleString()}</b><span>containers added</span></div>
+   <div class="st2"><b style="color:var(--blue)">${emptied.toLocaleString()}</b><span>slots emptied</span></div>
+   <div class="st2"><b style="color:var(--amber)">${faults}</b><span>slots faulted now</span></div>
+   <div class="st2"><b>${active.length.toLocaleString()}</b><span>units with changes</span></div>
   </div>
   <div class="k" style="margin:14px 2px 6px">Per day <span style="text-transform:none;letter-spacing:0;font-weight:600">· <i style="color:var(--green);font-style:normal">■</i> added <i style="color:var(--blue);font-style:normal">■</i> emptied</span></div>
   <div class="card cbox">${barSvg(buckets)}</div>
-  <div class="k" style="margin:14px 2px 6px">By unit</div>
-  <div class="card" style="overflow:hidden">${Object.entries(per).sort((x,y)=>(y[1].a+y[1].b)-(x[1].a+x[1].b)).map(([id,p])=>`
-   <div class="prow" onclick="Store.go('fleetunit',{id:'${esc(id)}'});Fleet.loadDetail('${esc(id)}')"><span class="mono">${esc(id)}</span><span class="gk">+${p.a}</span><span class="bk">−${p.b}</span><span class="${p.f?"ak":""}">${p.f?p.f+" fault":""}</span></div>`).join("")||`<div class="cnote" style="padding:12px">No slot changes in this window.</div>`}</div>
-  <div class="k" style="margin:14px 2px 6px">Latest events</div>
-  <div class="card" style="overflow:hidden">${ev.slice().reverse().slice(0,80).map(e=>`
-   <div class="prow"><span>${tFull(e.t)}</span><span class="mono">${esc(e.unit_id)}</span><span>slot ${e.slot}</span><span class="${e.kind==="added"?"gk":e.kind==="emptied"?"bk":e.kind==="fault"?"ak":""}">${e.kind}</span></div>`).join("")||`<div class="cnote" style="padding:12px">Nothing yet.</div>`}</div>
-  <div class="cnote" style="margin-top:8px">"Other" is a slot's first reading in the window, before there's a previous state to compare.</div>
+  <div class="k" style="margin:14px 2px 6px">By unit · most containers first <span style="text-transform:none;letter-spacing:0;font-weight:600">· <span style="color:var(--green);cursor:pointer" onclick="Store.tabTo('perf');Perf.days=${days};Perf.load()">Rank all →</span></span></div>
+  <div class="card" style="overflow:hidden">${active.slice(0,100).map(r=>`
+   <div class="prow" onclick="Store.go('fleetunit',{id:'${esc(r.unit_id)}'});Fleet.loadDetail('${esc(r.unit_id)}')"><span>${esc(r.label||r.unit_id)}<span style="color:var(--s-muted)"> · ${esc(r.suburb||"")}</span></span><span class="gk">+${(+r.added).toLocaleString()}</span><span class="bk">−${(+r.emptied).toLocaleString()}</span><span></span></div>`).join("")||`<div class="cnote" style="padding:12px">${a.loading?"Loading…":"No slot changes in this window."}</div>`}</div>
+  ${active.length>100?`<div class="cnote" style="margin-top:6px">Top 100 of ${active.length.toLocaleString()}. Rank shows them all, best or worst first.</div>`:""}
+  <div class="k" style="margin:14px 2px 6px">Latest changes</div>
+  <div class="card" style="overflow:hidden">${(a.ev||[]).slice().reverse().map(e=>`
+   <div class="prow"><span>${tFull(Date.parse(e.changed_at))}</span><span>${esc(name(e.unit_id))}</span><span>slot ${e.slot}</span><span class="${kind(e)==="added"?"gk":kind(e)==="emptied"?"bk":"ak"}">${kind(e)}</span></div>`).join("")||`<div class="cnote" style="padding:12px">Nothing yet.</div>`}</div>
  </div>
  ${tabbar()}`;
 };
@@ -2071,7 +2149,7 @@ Views.export=()=>{
  <div class="scroll">
   ${dummyNote(Fleet.units.map(x=>x.site_id))}
   <div class="k" style="margin:4px 2px 6px">Dataset</div>
-  <div class="seg">${[["packets","Packets"],["events","Slot events"],["units","Units now"]].map(([k,l])=>`<div class="${e.set===k?"on":""}" onclick="Fleet.exp.set='${k}';expCount()">${l}</div>`).join("")}</div>
+  <div class="seg">${[["summary","Unit summary"],["units","Units now"],["packets","Packets"],["events","Slot events"]].map(([k,l])=>`<div class="${e.set===k?"on":""}" onclick="Fleet.exp.set='${k}';expCount()">${l}</div>`).join("")}</div>
   ${e.set!=="units"?`
   <div class="k" style="margin:14px 2px 6px">Units</div>
   <div class="seg">${[["all","All"],["city","City"],["suburb","Suburb"],["pick","Pick units"]].map(([k,l])=>`<div class="${e.mode===k?"on":""}" onclick="expMode('${k}')">${l}</div>`).join("")}</div>
@@ -2081,8 +2159,8 @@ Views.export=()=>{
   <div class="chips" style="padding:0 0 4px">${winL.map(([h,l])=>`<div class="chip ${e.win===h?"on":""}" onclick="Fleet.exp.win=${h};expCount()">${l}</div>`).join("")}</div>
   ${offl?`<div class="fmeta" style="margin:4px 2px 0;color:var(--amber);font-weight:600">This unit is offline. The window ends at its last packet, ${tFull(Date.parse(selU.last_packet_at))}.</div>`:e.win&&!selU?`<div class="fmeta" style="margin:4px 2px 0">Windows count back from now. Units offline longer than that are only in All time.</div>`:""}`:""}
   <div class="card" style="padding:14px 15px;margin-top:12px">
-   <div style="font-size:15px;font-weight:800">${ids&&!ids.length?"No units selected":e.set==="units"?`${(ids?ids.length:Fleet.units.length).toLocaleString()} units`:e.count==null?"Counting…":`${e.count.toLocaleString()} rows`}</div>
-   <div class="fmeta">${e.set==="packets"?"Every field the unit sent, plus the full raw JSON (relay packets carry “via”).":e.set==="events"?"Each slot state change with time; added / emptied worked out from the previous state.":"Latest packet per unit, decoded: cell, tier, signal, slots, GPS fix, freshness."}</div>
+   <div style="font-size:15px;font-weight:800">${ids&&!ids.length?"No units selected":e.set==="units"?`${(ids?ids.length:Fleet.units.length).toLocaleString()} units`:e.count==null?"Counting…":e.count<0?"Too many rows to count quickly":`${e.count.toLocaleString()} rows`}</div>
+   <div class="fmeta">${e.set==="summary"?"One row per unit: containers deposited, collections, days reporting and containers per day. Best for comparing units.":e.set==="packets"?"Every field the unit sent, plus the full raw JSON (relay packets carry “via”).":e.set==="events"?"Each slot state change with time; added / emptied worked out from the previous state.":"Latest packet per unit, decoded: cell, tier, signal, slots, GPS fix, freshness."}</div>
    <div style="display:flex;gap:8px;margin-top:12px">
     <div class="cta" style="flex:1;padding:12px;font-size:14px;${e.busy?"opacity:.5":""}" onclick="runExport('csv')">${e.busy?"Preparing…":"Export CSV"}</div>
     <div class="cta sub" style="flex:1;padding:12px;font-size:14px" onclick="runExport('json')">Export JSON</div>
@@ -2146,10 +2224,10 @@ function expTag(){const e=Fleet.exp, ids=expIds(); if(!ids)return "all";
  return ids.length===1?ids[0]:ids.length+"-units";}
 async function expCount(){
  const e=Fleet.exp; e.count=null; render();
- if(e.set==="units")return;
+ if(e.set==="units"||e.set==="summary")return;
  const col=e.set==="packets"?"received_at":"changed_at", tbl=e.set==="packets"?"packets":"slot_events";
  const ids=expIds(); if(ids&&!ids.length){e.count=0;render();return;}
- e.count=await apiCount(`${tbl}?${expFilter()}${e.win?`${col}=gte.${expSince(e.win)}`:"id=gt.0"}`).catch(()=>null); render();
+ e.count=await apiCount(`${tbl}?${expFilter()}${e.win?`${col}=gte.${expSince(e.win)}`:"id=gt.0"}`).catch(()=>-1); render();
 }
 const csvCell=v=>{if(v==null)return "";const s=String(v);return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;};
 const toCsv=(cols,rows)=>[cols.join(","),...rows.map(r=>cols.map(c=>csvCell(r[c])).join(","))].join("\n");
@@ -2182,7 +2260,12 @@ async function runExport(fmt){
  const e=Fleet.exp; if(e.busy)return; const ids=expIds(); if(ids&&!ids.length){toast("Pick some units first");return;}
  e.busy=true; render();
  try{
-   if(e.set==="packets")await exportPackets(e.win,fmt);
+   if(e.set==="summary"){ /* one row per unit: containers, collections, per day (unit_performance) */
+     const from=e.win?new Date(Date.now()-e.win*3600e3):new Date("2020-01-01T00:00:00Z"), set=ids?new Set(ids):null;
+     const rows=publicUnits(await apiGet(`rpc/unit_performance?p_from=${encodeURIComponent(from.toISOString())}&p_to=${encodeURIComponent(new Date().toISOString())}`)).filter(r=>!set||set.has(r.unit_id)).sort((a,b)=>(+b.per_day)-(+a.per_day));
+     const cols=["unit_id","label","site_id","suburb","added","emptied","days","per_day","last_heard"];
+     exportFile(`binbypass-${expTag()}-unit-summary-${stamp()}.${fmt}`,fmt==="csv"?toCsv(cols,rows):JSON.stringify(rows,null,1),fmt==="csv"?"text/csv":"application/json");}
+   else if(e.set==="packets")await exportPackets(e.win,fmt);
    else if(e.set==="events")await exportEvents(e.win,fmt);
    else{await Fleet.refresh();const cols=["unit_id","label","status","site_id","suburb","freshness","healthy","last_packet_at","age_s","src","seq","vbat_mv","chg","tier","rssi","fw","filled","slots_ok","slots_fault","slots","lat","lon","acc_m","located_at","loc_source"];
      const M=(e.meta&&e.meta.sub)||{}, set=ids?new Set(ids):null;
@@ -2294,6 +2377,8 @@ async function planWalk(){
    let plan=null,route=null,c=null,DD=D;
    for(const f of [1,2,4]){
      DD=D*f; c=walkCandidates(DD); const excl=new Set();
+     if(f>1&&c.sites.length){ /* past your time: only the single nearest unit with containers, not a longer tour */
+       const n=[...c.sites].sort((a,b)=>kmA(c.start,a.ll)-kmA(c.start,b.ll))[0]; c={...c,sites:[n]}; }
      for(let tries=0;tries<6;tries++){
        plan=bestPlan(c,DD,excl);
        if(!plan)break;
@@ -2340,7 +2425,7 @@ function mountWalkMap(){
  /* everything else in the catchment, dimmed */
  REFUND_POINTS.filter(r=>r.ll&&r.type==="RVM"&&kmA(c.start,r.ll)<=Math.max(c.reach*1.4,1)&&!(P&&P.end&&P.end.id===r.id))
    .forEach(r=>add(`<div class="pin-r closed" style="opacity:.35" onclick="event.stopPropagation();Store.go('refund',{id:'${r.id}'})">${I.recy}</div>`,r.ll,1));
- SITES.filter(s=>s.ll&&showUnit(s)&&!(P&&P.stops&&P.stops.includes(s))).forEach(s=>add(`<div class="pin-u off" style="opacity:.55"><div class="b">${ready(s)}</div><div class="tip"></div></div>`,s.ll,2));
+ SITES.filter(s=>s.ll&&showUnit(s)&&kmA(c.start,s.ll)<=Math.max(c.reach*1.4,1)&&!(P&&P.stops&&P.stops.includes(s))).slice(0,300).forEach(s=>add(`<div class="pin-u off" style="opacity:.55"><div class="b">${ready(s)}</div><div class="tip"></div></div>`,s.ll,2));
  if(P&&!P.none){
    P.stops.forEach((s,i)=>add(`<div class="pin-u" onclick="event.stopPropagation();Store.go('unit',{id:'${s.id}'})"><div class="b">${i+1} · ${ready(s)}</div><div class="tip"></div></div>`,s.ll,6));
    if(!P.end.home)add(`<div class="pin-r ${isOpen(P.end)?"":"closed"}" style="outline:3px solid var(--blue-tint)" onclick="event.stopPropagation();Store.go('refund',{id:'${P.end.id}'})">${I.recy}</div>`,P.end.ll,5);
@@ -2391,7 +2476,8 @@ Views.walk=()=>{
    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
     <div class="money" style="font-size:24px">${fmt$(P.n*CENTS/100)}</div>
     <div style="font-size:13px;font-weight:700">${P.n} container${P.n===1?"":"s"} · ${km.toFixed(1)} km · ${mins} min${P.route?"":" (approx)"}</div></div>
-   ${P.over?`<div style="font-size:12.5px;color:var(--amber);font-weight:700;margin-top:6px">Nothing fits in ${P.asked/WALK_MPM} min. This is the shortest route past a unit ${P.end.home?"and back":"to a return point"}.</div>`:""}
+   ${P.over?`<div style="font-size:12.5px;color:var(--amber);font-weight:700;margin-top:6px">Nothing fits in ${P.asked/WALK_MPM} min. This is the nearest unit with containers ${P.end.home?"and back":"then a return point"}.</div>`:""}
+   ${P.stops&&P.stops.reduce((a,s)=>a+avail(s),0)*CENTS/100<worthMin()?`<div style="font-size:12.5px;color:var(--amber);font-weight:700;margin-top:4px">Below your ${fmt$(worthMin())} worth-a-run amount. Change it under Saved.</div>`:""}
    <div class="fmeta" style="margin-top:6px">You → ${P.stops.map((s,i)=>`<b style="color:var(--s-ink)">${i+1}</b> ${esc(s.host)} (${avail(s)})`).join(" → ")} → ${P.end.home?"back where you started":`cash in at <b style="color:var(--s-ink)">${endName}</b> (${typeName(P.end).toLowerCase()})${endOpen?`, open when you arrive · ${hoursLabel(P.end)}`:`, closed when you arrive${opensLater(P.end)?" · "+opensLater(P.end):""}`}`}</div>
    <div style="display:flex;gap:8px;margin-top:10px">
     <div class="cta" style="flex:1;padding:11px;font-size:14px" onclick="walkGmaps()">Walk it in Google Maps</div>
@@ -2435,7 +2521,7 @@ Feed.subscribe(ev=>{
    const s=ev.site;
    $("notif").innerHTML=`
     <div style="width:38px;height:38px;border-radius:11px;background:var(--green-cta);display:grid;place-items:center;color:var(--green-ink-on);font-weight:800;font-size:12px;flex:0 0 auto">BB</div>
-    <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700">${s.host} is ${pctFull(s)}% full</div>
+    <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700">${s.host} has ${ready(s)} of ${capOf(s)} full</div>
     <div style="font-size:12px;color:var(--s-muted)">${ready(s)} containers · ${uval(s)} ready${hasLoc()?` · ${s.km} km away`:""}</div></div>
     <div style="font-size:11px;color:var(--s-muted)">now</div>`;
    $("notif").classList.add("show");
@@ -2443,6 +2529,18 @@ Feed.subscribe(ev=>{
    setTimeout(()=>$("notif").classList.remove("show"),7000);
  }
 });
+/* ============================ ACCESSIBILITY ============================
+   Tappable divs become keyboard- and screen-reader-usable buttons; closed
+   sheets and dialogs are hidden from assistive tech. Runs after DOM changes. */
+function a11yPass(){
+ document.querySelectorAll("[onclick]:not(button):not(a):not(input):not(select):not([role])").forEach(el=>{
+   el.setAttribute("role","button"); if(!el.hasAttribute("tabindex"))el.setAttribute("tabindex","0");});
+ const bg=$("modalbg"); if(bg)bg.setAttribute("aria-hidden",bg.classList.contains("show")?"false":"true");
+ const sh=$("sheet"); if(sh)sh.setAttribute("aria-hidden",sh.classList.contains("up")?"false":"true");
+}
+document.addEventListener("keydown",e=>{
+ if((e.key==="Enter"||e.key===" ")&&e.target&&e.target.getAttribute&&e.target.getAttribute("role")==="button"&&e.target.tagName!=="BUTTON"){e.preventDefault();e.target.click();}});
+let a11yT=null; new MutationObserver(()=>{clearTimeout(a11yT);a11yT=setTimeout(a11yPass,60);}).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:["class"]});
 /* ============================ BOOT ============================ */
 if(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)document.body.dataset.theme="dark";
 $("modalbg").onclick=e=>{if(e.target.id==="modalbg")closeModal();};
@@ -2450,8 +2548,9 @@ Store.state.appMode=AppMode.get();
 if(!FORCE_DEMO){SITES.length=0; Personal.adopt(); Store.state.unitsCollectedMonth=0;
   /* browser only: the native shell pushes CoreLocation fixes into bbSetHome */
   const saved=Loc.get(); if(saved&&saved.lat!=null){Loc.label=saved.label||""; HOME.lat=saved.lat; HOME.lng=saved.lng; HOME_SRC="manual";}
-  if(!(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.bbShare)&&navigator.geolocation)
-    navigator.geolocation.getCurrentPosition(p=>gotGps(p.coords.latitude,p.coords.longitude),()=>{},{maximumAge:600000,timeout:15000});}
+  /* browser: no permission prompt on load. Ask only from "Use where I am", or reuse a grant the person already gave. */
+  if(!IS_NATIVE&&navigator.geolocation&&navigator.permissions&&!saved)
+    navigator.permissions.query({name:"geolocation"}).then(r=>{if(r.state==="granted")navigator.geolocation.getCurrentPosition(p=>gotGps(p.coords.latitude,p.coords.longitude),()=>{},{maximumAge:600000,timeout:15000});}).catch(()=>{});}
 if(Store.state.appMode==="cds"){Store.state.tab="fleet";Store.state.screen={name:"fleet",params:{}};Fleet.refresh();}
 else{let ob=null;try{ob=localStorage.getItem("bb.obDone")}catch(e){} if(ob){Store.state.tab="map";Store.state.screen={name:"map",params:{}};}}
 render();
