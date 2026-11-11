@@ -2052,22 +2052,24 @@ async function showRaw(id){
 
 /* ---- Activity ---- */
 /* ---- CDS filters: one set, used by Fleet, Map and Rank ---- */
-const CF={q:"",site:"",suburb:"",status:"",meta:null,sites:[],
+const CF={q:"",site:"",lga:"",suburb:"",status:"",meta:null,sites:[],
  async ensure(){ if(this.meta)return; this.meta={};
-   try{const [us,ss]=await Promise.all([apiGet("units?select=unit_id,suburb,site_id"),apiGet("sites?select=site_id,name")]);
+   try{const [us,ss]=await Promise.all([apiGet("units?select=unit_id,suburb,site_id,lga"),apiGet("sites?select=site_id,name")]);
      us.forEach(u=>this.meta[u.unit_id]=u); this.sites=ss.filter(x=>x.site_id!=="bench");}catch(e){}
    if(cdsScreen())render(); },
  sub(id){return (this.meta&&this.meta[id]&&this.meta[id].suburb)||"";},
  st(u){const f=u.freshness||(u.age_s!=null&&u.age_s<7200?"live":u.age_s!=null&&u.age_s<86400?"stale":"offline");return f;},
  match(u){ const id=u.unit_id, q=this.q.trim().toLowerCase();
    if(this.site&&(u.site_id||"")!==this.site)return false;
+   if(this.lga&&((this.meta&&this.meta[id]&&this.meta[id].lga)||"")!==this.lga)return false;
    if(this.suburb&&this.sub(id)!==this.suburb)return false;
    if(this.status&&u.freshness!==undefined&&this.st(u)!==this.status)return false;
    if(q&&!`${u.label||""} ${id} ${this.sub(id)}`.toLowerCase().includes(q))return false;
    return true; },
- active(){return !!(this.q||this.site||this.suburb||this.status);},
- subs(){const set=new Set(); Object.values(this.meta||{}).forEach(m=>{if(m.suburb&&(!this.site||m.site_id===this.site))set.add(m.suburb);}); return [...set].sort();},
- set(k,v){this[k]=v; if(k==="site")this.suburb=""; if(Store.state.screen.name==="perf")Perf.load(); else render();}
+ active(){return !!(this.q||this.site||this.lga||this.suburb||this.status);},
+ lgas(){const set=new Set(); Object.values(this.meta||{}).forEach(m=>{if(m.lga&&(!this.site||m.site_id===this.site))set.add(m.lga);}); return [...set].sort();},
+ subs(){const set=new Set(); Object.values(this.meta||{}).forEach(m=>{if(m.suburb&&(!this.site||m.site_id===this.site)&&(!this.lga||m.lga===this.lga))set.add(m.suburb);}); return [...set].sort();},
+ set(k,v){this[k]=v; if(k==="site"){this.suburb="";this.lga="";} if(k==="lga")this.suburb=""; if(Store.state.screen.name==="perf")Perf.load(); else render();}
 };
 function cdsFilterBar(){ CF.ensure();
  const opt=(v,l,cur)=>`<option value="${esc(v)}" ${cur===v?"selected":""}>${esc(l)}</option>`;
@@ -2076,10 +2078,13 @@ function cdsFilterBar(){ CF.ensure();
   <input id="cf-q" aria-label="Search units" placeholder="Search name, id or suburb" value="${esc(CF.q)}" oninput="CF.q=this.value;clearTimeout(window._cfT);window._cfT=setTimeout(()=>{render();const i=$('cf-q');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}},250)" style="${sel};flex:none">
   <div style="display:flex;gap:8px">
    <select id="cf-site" aria-label="City" onchange="CF.set('site',this.value)" style="${sel}">${opt("","All cities",CF.site)}${CF.sites.map(x=>opt(x.site_id,String(x.name).replace(/\s*\(dummy data\)/i,""),CF.site)).join("")}</select>
+   <select id="cf-lga" aria-label="Council (LGA)" onchange="CF.set('lga',this.value)" style="${sel}">${opt("","All councils",CF.lga)}${CF.lgas().map(x=>opt(x,x,CF.lga)).join("")}</select>
+  </div>
+  <div style="display:flex;gap:8px">
    <select id="cf-sub" aria-label="Suburb" onchange="CF.set('suburb',this.value)" style="${sel}">${opt("","All suburbs",CF.suburb)}${CF.subs().map(x=>opt(x,x,CF.suburb)).join("")}</select>
    <select id="cf-st" aria-label="Status" onchange="CF.set('status',this.value)" style="${sel}">${opt("","Any status",CF.status)}${opt("live","Reporting",CF.status)}${opt("stale","Quiet",CF.status)}${opt("offline","Offline",CF.status)}</select>
   </div>
-  ${CF.active()?`<div style="font-size:12.5px;font-weight:700;color:var(--green);cursor:pointer" onclick="CF.q='';CF.site='';CF.suburb='';CF.status='';${Store.state.screen.name==="perf"?"Perf.load()":"render()"}">Clear filters</div>`:""}
+  ${CF.active()?`<div style="font-size:12.5px;font-weight:700;color:var(--green);cursor:pointer" onclick="CF.q='';CF.site='';CF.lga='';CF.suburb='';CF.status='';${Store.state.screen.name==="perf"?"Perf.load()":"render()"}">Clear filters</div>`:""}
  </div>`;}
 /* ---- CDS map: filtered units, coloured by status ---- */
 let cmap=null,cmapMarkers=[],cmapView=null;
@@ -2225,7 +2230,7 @@ Views.export=()=>{
   <div class="seg">${[["summary","Unit summary"],["units","Units now"],["packets","Packets"],["events","Slot events"]].map(([k,l])=>`<div class="${e.set===k?"on":""}" onclick="Fleet.exp.set='${k}';expCount()">${l}</div>`).join("")}</div>
   ${e.set!=="units"?`
   <div class="k" style="margin:14px 2px 6px">Units</div>
-  <div class="seg">${[["all","All"],["city","City"],["suburb","Suburb"],["pick","Pick units"]].map(([k,l])=>`<div class="${e.mode===k?"on":""}" onclick="expMode('${k}')">${l}</div>`).join("")}</div>
+  <div class="seg">${[["all","All"],["city","City"],["lga","Council"],["suburb","Suburb"],["pick","Pick units"]].map(([k,l])=>`<div class="${e.mode===k?"on":""}" onclick="expMode('${k}')">${l}</div>`).join("")}</div>
   ${expPicker(units)}
   <div class="fmeta" style="margin:6px 2px 0">${expSelText()}</div>
   <div class="k" style="margin:10px 2px 6px">Window</div>
@@ -2246,14 +2251,15 @@ Views.export=()=>{
 /* Which units an export covers: all, a city (site), a suburb, or a hand-picked set */
 async function expMeta(){
  const e=Fleet.exp; e.meta={sites:{},sub:{}};
- try{const [sites,us]=await Promise.all([apiGet("sites?select=site_id,name,area"),apiGet("units?select=unit_id,site_id,suburb")]);
-   sites.forEach(x=>e.meta.sites[x.site_id]=x); us.forEach(u=>e.meta.sub[u.unit_id]={site:u.site_id,suburb:u.suburb});}catch(err){}
+ try{const [sites,us]=await Promise.all([apiGet("sites?select=site_id,name,area"),apiGet("units?select=unit_id,site_id,suburb,lga")]);
+   sites.forEach(x=>e.meta.sites[x.site_id]=x); us.forEach(u=>e.meta.sub[u.unit_id]={site:u.site_id,suburb:u.suburb,lga:u.lga});}catch(err){}
  render();
 }
 const expSiteName=id=>{const m=Fleet.exp.meta&&Fleet.exp.meta.sites[id];return m?(m.name||id):(id||"No site");};
 function expIds(){                       /* null = every unit */
  const e=Fleet.exp, all=Fleet.units.filter(x=>x.age_s!=null), M=(e.meta&&e.meta.sub)||{};
  if(e.mode==="city")return e.city==null?[]:all.filter(u=>(u.site_id||"")===e.city).map(u=>u.unit_id);
+ if(e.mode==="lga")return e.lga==null?[]:all.filter(u=>(M[u.unit_id]||{}).lga===e.lga).map(u=>u.unit_id);
  if(e.mode==="suburb")return e.suburb==null?[]:all.filter(u=>{const m=M[u.unit_id];return m&&m.suburb&&`${m.suburb}|${m.site||""}`===e.suburb;}).map(u=>u.unit_id);
  if(e.mode==="pick")return e.picked.slice();
  return null;
@@ -2264,12 +2270,15 @@ function expSelText(){
  const e=Fleet.exp, ids=expIds();
  if(!ids)return `Every unit (${Fleet.units.filter(x=>x.age_s!=null).length}).`;
  if(e.mode==="city")return e.city==null?"Pick a city.":`${expSiteName(e.city)}: ${ids.length} units.`;
+ if(e.mode==="lga")return e.lga==null?"Pick a council.":`${e.lga}: ${ids.length} units.`;
  if(e.mode==="suburb")return e.suburb==null?"Pick a suburb.":`${e.suburb.split("|")[0]}, ${expSiteName(e.suburb.split("|")[1])}: ${ids.length} unit${ids.length===1?"":"s"}.`;
  return ids.length?`${ids.length} unit${ids.length===1?"":"s"} picked. <span style="color:var(--green);font-weight:700;cursor:pointer" onclick="Fleet.exp.picked=[];expCount()">Clear</span>`:"Tap units to add them.";
 }
 function expPicker(units){
  const e=Fleet.exp, M=(e.meta&&e.meta.sub)||{};
  if(e.mode==="all")return "";
+ if(e.mode==="lga"){const n={}; units.forEach(u=>{const l=(M[u.unit_id]||{}).lga; if(l)n[l]=(n[l]||0)+1;});
+   return `<div class="chips" style="padding:8px 0 4px;flex-wrap:wrap">${Object.keys(n).sort().map(k=>`<div class="chip ${e.lga===k?"on":""}" onclick="Fleet.exp.lga='${esc(k)}';expCount()">${esc(k)} <span style="opacity:.6">${n[k]}</span></div>`).join("")||`<div class="fmeta">No councils recorded yet.</div>`}</div>`;}
  if(e.mode==="city"){const n={}; units.forEach(u=>{const k=u.site_id||"";n[k]=(n[k]||0)+1;});
    return `<div class="chips" style="padding:8px 0 4px;flex-wrap:wrap">${Object.keys(n).sort((a,b)=>expSiteName(a).localeCompare(expSiteName(b))).map(k=>
      `<div class="chip ${e.city===k?"on":""}" onclick="Fleet.exp.city='${esc(k)}';expCount()">${esc(expSiteName(k))} <span style="opacity:.6">${n[k]}</span></div>`).join("")}</div>`;}
@@ -2293,7 +2302,7 @@ function expFilter(){const ids=expIds(); return ids?`unit_id=in.(${ids.map(encod
 function expSince(win){const ids=expIds(); return ids&&ids.length===1?sinceFor(ids[0],win):sinceIso(win);}
 function expTag(){const e=Fleet.exp, ids=expIds(); if(!ids)return "all";
  const slug=x=>String(x).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
- if(e.mode==="city")return slug(expSiteName(e.city)); if(e.mode==="suburb")return slug(e.suburb.split("|")[0]+"-"+expSiteName(e.suburb.split("|")[1]));
+ if(e.mode==="city")return slug(expSiteName(e.city)); if(e.mode==="lga")return slug(e.lga); if(e.mode==="suburb")return slug(e.suburb.split("|")[0]+"-"+expSiteName(e.suburb.split("|")[1]));
  return ids.length===1?ids[0]:ids.length+"-units";}
 async function expCount(){
  const e=Fleet.exp; e.count=null; render();
