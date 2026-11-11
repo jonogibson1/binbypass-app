@@ -49,6 +49,10 @@ textarea{min-height:84px;resize:vertical}
 .steps{margin:10px 0 0;padding-left:18px;color:var(--muted);font-size:14px}
 @media (max-width:820px){.appbox,.cols{grid-template-columns:1fr}.frame{height:760px}}
 @media (max-width:520px){.row2{grid-template-columns:1fr}h1{font-size:23px}}
+.thread{margin-top:8px;border-left:2px solid var(--line,#ddd);padding-left:10px;display:grid;gap:8px}.thread:empty{display:none}
+.reply{font-size:14px}.rbox{margin-top:8px}.rbox textarea{min-height:56px}
+.linkbtn{background:none;border:0;padding:6px 0 0;color:var(--green,#1f7a4d);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.linkbtn:focus-visible{outline:2px solid currentColor;outline-offset:2px}
 </style>
 </head>
 <body>
@@ -223,8 +227,36 @@ async function board() {
                   onclick: (e) => vote(f.id, e.currentTarget) }, "▲ " + f.votes),
     h("div", { class: "t" }, f.text, h("div", { class: "m" }, `${f.who} · ${ago(f.at)}`))));
   if (!b.comments.length) cl.append(h("p", { class: "sub" }, "No comments yet."));
-  for (const c of b.comments) cl.append(h("div", { class: "item" },
-    h("div", { class: "t" }, c.text, h("div", { class: "m" }, `${c.who}${ROLE[c.role] ? " (" + ROLE[c.role] + ")" : ""} · ${ago(c.at)}`))));
+  const meta = (c) => `${c.who}${ROLE[c.role] ? " (" + ROLE[c.role] + ")" : ""} · ${ago(c.at)}`;
+  for (const c of b.comments) {
+    const thread = h("div", { class: "thread" });
+    for (const r of c.replies || []) thread.append(h("div", { class: "reply" }, r.text, h("div", { class: "m" }, meta(r))));
+    const box = h("div", { class: "rbox", hidden: !openReply.has(c.id) });
+    const ta = h("textarea", { maxlength: "1000", rows: "2", placeholder: "Reply to " + c.who + "…", "aria-label": "Reply to " + c.who });
+    ta.value = drafts[c.id] || ""; ta.addEventListener("input", () => { drafts[c.id] = ta.value; });
+    const hp = h("input", { type: "text", tabindex: "-1", autocomplete: "off", class: "hp", "aria-hidden": "true" });
+    const msg = h("p", { role: "status", hidden: true });
+    const send = h("button", { class: "btn", type: "button", onclick: () => reply(c.id, ta, hp, send, msg) }, "Post reply");
+    box.append(ta, hp, h("p", { style: "margin-top:6px" }, send), msg);
+    const n = (c.replies || []).length;
+    const tog = h("button", { class: "linkbtn", type: "button", "aria-expanded": openReply.has(c.id) ? "true" : "false",
+      onclick: () => { const o = box.hidden; box.hidden = !o; tog.setAttribute("aria-expanded", o ? "true" : "false"); if (o) { openReply.add(c.id); ta.focus(); } else openReply.delete(c.id); } },
+      "Reply" + (n ? ` · ${n} ${n === 1 ? "reply" : "replies"}` : ""));
+    cl.append(h("div", { class: "item" }, h("div", { class: "t" }, c.text, h("div", { class: "m" }, meta(c)), tog, thread, box)));
+  }
+}
+const openReply = new Set(), drafts = {};
+async function reply(id, ta, hp, btn, msg) {
+  const text = ta.value.trim(); msg.hidden = false;
+  if (text.length < 2) { msg.className = "err"; msg.textContent = "Write a bit more first."; return; }
+  btn.disabled = true;
+  try {
+    const r = await rpc("try_reply", { p_token: store.get(TOK), p_parent: id, p_text: text, p_hp: hp.value });
+    if (r.error === "signin") { showGate("Please enter your email again."); return; }
+    if (r.error) { msg.className = "err"; msg.textContent = r.error === "slow" ? "That's a lot of posts in an hour. Try again a bit later." : r.error === "gone" ? "That comment was removed." : "That didn't go through. Try again."; return; }
+    drafts[id] = ""; openReply.delete(id); board();
+  } catch (e) { msg.className = "err"; msg.textContent = "Can't reach the server."; }
+  finally { btn.disabled = false; }
 }
 /* location box: search Australia (OpenStreetMap / Photon), then move the app there */
 async function locFind() {

@@ -379,7 +379,7 @@ const near=s=>!!s.ll&&s.km<=RADIUS_KM;
 const avail=s=>counts(s)&&hasLoc()&&near(s)?ready(s):0;
 const totalReady=()=>SITES.reduce((a,s)=>a+avail(s)*CENTS/100,0);
 const totalCount=()=>SITES.reduce((a,s)=>a+avail(s),0);
-/* "Worth a run" threshold in dollars, set under Saved (APP-REVIEW 1.4). */
+/* "Worth a run" threshold in dollars, set under Favourites (APP-REVIEW 1.4). */
 const WORTH_OPTS=[2,5,10,20];
 const worthMin=()=>{try{const v=parseFloat(localStorage.getItem("bb.worth"));return isFinite(v)&&v>=0?v:5}catch(e){return 5}};
 function setWorth(v){try{localStorage.setItem("bb.worth",String(v))}catch(e){} render();}
@@ -877,7 +877,7 @@ const escA=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,
 function tabbar(){
  const t=Store.state.tab, tab=(k,ic,l)=>`<div class="tab ${t===k?'on':''}" onclick="Store.tabTo('${k}')${k==='activity'?';Fleet.loadAct()':k==='export'?';expCount()':k==='perf'?';Perf.load()':''}">${ic}${l}</div>`;
  if(Store.state.appMode==="cds")return `<div class="tabbar">${tab('fleet',I.units,'Fleet')}${tab('cdsmap',I.units,'Map')}${tab('perf',I.clock.replace(/width="15" height="15"/,''),'Rank')}${tab('activity',I.clock.replace(/width="15" height="15"/,''),'Activity')}${tab('export',I.share.replace(/width="15" height="15"/,''),'Data')}</div>`;
- return `<div class="tabbar">${tab('map',I.map,'Map')}${tab('value',I.val,'Value')}${tab('myunits',I.units,'Saved')}</div>`;
+ return `<div class="tabbar">${tab('map',I.map,'Map')}${tab('value',I.val,'Value')}${tab('myunits',I.units,'Favourites')}</div>`;
 }
 /* Root screens carry the Collector | CDS switch next to the theme button. */
 const themeBtn=(compact)=>`<div style="display:flex;gap:8px;align-items:center">${Store.state.stack.length?"":modeSw(compact)}<div class="iconbtn" onclick="toggleTheme()">${I.moon}</div></div>`;
@@ -971,7 +971,7 @@ const showUnit=s=>!Store.state.filters.hideEmpty||ready(s)>0;
 function liveMapView(){
  const f=Store.state.filters;
  setTimeout(()=>{ if(!Live.loaded&&!Live.error)return; /* wait for the units: the map centres on them */
-   if(!mountLeaflet()&&$("lmap"))$("lmap").innerHTML=`<div class="mapmsg">Map tiles need a connection.<br>Units are listed under Value and Saved.</div>`; },0);
+   if(!mountLeaflet()&&$("lmap"))$("lmap").innerHTML=`<div class="mapmsg">Map tiles need a connection.<br>Units are listed under Value and Favourites.</div>`; },0);
  const none=Live.loaded&&!SITES.length;
  const note=t=>`<div class="card" style="position:absolute;left:12px;right:12px;bottom:12px;padding:12px 14px;z-index:20;font-size:13px">${t}</div>`;
  return `
@@ -1154,11 +1154,17 @@ Views.myunits=()=>{
    </div>`;
  return `
  <div class="sbspace"></div>
- <div class="apphead"><div class="t">Saved units</div>${themeBtn()}</div>
+ <div class="apphead"><div class="t">Favourite units</div>${themeBtn()}</div>
  <div class="scroll">
   ${freshLine()?`<div style="margin:-4px 2px 8px">${freshLine()}</div>`:""}
-  <div class="k" style="margin:4px 2px 7px">Saved on this phone · no account needed</div>
-  <div class="card" style="border-radius:16px;overflow:hidden">${saved.map(row).join("")||'<div style="padding:18px;text-align:center;color:var(--s-muted);font-size:13px">Nothing saved yet</div>'}</div>
+  <div class="k" style="margin:4px 2px 7px">Kept on this phone · no account needed</div>
+  <div class="card" style="border-radius:16px;overflow:hidden">${saved.map(row).join("")||'<div style="padding:18px;text-align:center;color:var(--s-muted);font-size:13px">No favourites yet. Open a unit and tap ☆ Favourite.</div>'}</div>
+  <div class="k" style="margin:16px 2px 7px">Set notifications</div>
+  <div class="card" style="border-radius:16px;overflow:hidden">${Alerts.rows()}</div>
+  <div style="display:flex;gap:9px;align-items:center;margin-top:9px;padding:11px 13px;border:1.5px dashed var(--s-line);border-radius:13px;cursor:pointer" onclick="Alerts.edit()">
+    <div style="width:22px;height:22px;border-radius:50%;border:2px solid var(--s-muted);display:grid;place-items:center;color:var(--s-muted);font-weight:800;font-size:13px">+</div>
+    <div style="font-size:12.5px;color:var(--s-muted)">Email or ping me when a favourite or an area has enough ready</div>
+  </div>
   <div class="k" style="margin:16px 2px 7px">Nearby</div>
   <div class="card" style="border-radius:16px;overflow:hidden">${other.map(row).join("")}</div>
   <div style="display:flex;gap:9px;align-items:center;margin-top:13px;padding:11px 13px;border:1.5px dashed var(--s-line);border-radius:13px;cursor:pointer" onclick="addSiteModal()">
@@ -1173,6 +1179,72 @@ Views.myunits=()=>{
   </div>
  </div>
  ${tabbar()}`;
+};
+
+/* ---- Notifications: email or phone ping when a favourite unit / an area reaches a count (migrations/2026-11-12-alerts.sql).
+   No accounts: a random key on this phone owns its alerts. Phone ping goes through the free ntfy app. ---- */
+const Alerts={
+ list:null,busy:false,
+ key(){let k=null;try{k=localStorage.getItem("bb.alertKey")}catch(e){}
+   if(!k){const a=new Uint8Array(24);crypto.getRandomValues(a);k=[...a].map(b=>b.toString(16).padStart(2,"0")).join("");try{localStorage.setItem("bb.alertKey",k)}catch(e){}}return k;},
+ pref(n,v){try{if(v===undefined)return localStorage.getItem("bb.alert."+n)||"";localStorage.setItem("bb.alert."+n,v)}catch(e){return ""}},
+ topic(){let t=this.pref("ntfy");if(!t){t="binbypass-"+this.key().slice(0,12);this.pref("ntfy",t);}return t;},
+ async rpc(fn,body){const r=await fetch(`${API.base}/rpc/${fn}`,{method:"POST",headers:{...apiHdr,"Content-Type":"application/json"},body:JSON.stringify(body)});
+   if(!r.ok)throw new Error(r.status);return r.json();},
+ async load(){if(this.busy||DATA!=="live")return;this.busy=true;
+   try{this.list=await this.rpc("alert_list",{p_key:this.key()});}catch(e){this.list=this.list||[];}
+   this.busy=false;if(Store.state.screen.name==="myunits")render();},
+ rows(){
+   if(DATA!=="live")return `<div style="padding:16px;text-align:center;color:var(--s-muted);font-size:13px">Notifications work with live data.</div>`;
+   if(this.list===null){this.load();return `<div style="padding:16px;text-align:center;color:var(--s-muted);font-size:13px">Loading…</div>`;}
+   if(!this.list.length)return `<div style="padding:16px;text-align:center;color:var(--s-muted);font-size:13px">No notifications set</div>`;
+   return this.list.map(a=>`<div class="urow" onclick="Alerts.edit(${a.id})"><div style="min-width:0">
+     <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">🔔 ${esc(a.label||"")}</div>
+     <div style="font-size:12px;color:var(--s-muted);margin-top:2px">At ${a.threshold} ready (${fmt$(a.threshold*CENTS/100)}) · ${[a.email?"email":"",a.ntfy?"phone":""].filter(Boolean).join(" + ")} · now ${a.now}</div></div>
+     <div style="font-size:12px;font-weight:700;color:${a.now>=a.threshold?"var(--green)":"var(--s-muted)"}">${a.now>=a.threshold?"Reached":"Waiting"}</div></div>`).join("");
+ },
+ f:null,
+ edit(id){
+   const a=id&&this.list?this.list.find(x=>x.id===id):null, favs=SITES.filter(s=>s.saved&&s.live);
+   this.f=a?{id:a.id,kind:a.kind,unit:a.unit_id,radius:a.radius_km,threshold:a.threshold,email:a.email||"",phone:!!a.ntfy,lat:a.lat,lon:a.lon,label:a.label}
+          :{id:null,kind:favs.length?"unit":"area",unit:favs[0]?favs[0].id:null,radius:2,threshold:50,email:this.pref("email"),phone:!!this.pref("phoneOn")};
+   this.draw();},
+ draw(){
+   const f=this.f, favs=SITES.filter(s=>s.saved&&s.live), chip=(on,js,t)=>`<div class="chip ${on?"on":""}" onclick="${js}">${t}</div>`;
+   modal(`<div style="font-size:16.5px;font-weight:800">${f.id?"Edit notification":"Set a notification"}</div>
+   <div class="k" style="margin:12px 0 6px">Watch</div>
+   <div class="chips">${chip(f.kind==="unit","Alerts.f.kind='unit';Alerts.draw()","A favourite unit")}${chip(f.kind==="area","Alerts.f.kind='area';Alerts.draw()","An area")}</div>
+   ${f.kind==="unit"?(favs.length?`<div class="chips" style="padding-top:8px">${favs.map(s=>chip(f.unit===s.id,`Alerts.f.unit='${escA(s.id)}';Alerts.draw()`,esc(s.host))).join("")}</div>`
+       :`<div style="font-size:12.5px;color:var(--s-muted);margin-top:8px">No favourites yet. Open a unit and tap ☆ Favourite.</div>`)
+     :(hasLoc()||f.lat!=null?`<div style="font-size:12.5px;color:var(--s-muted);margin-top:8px">Around ${esc(f.lat!=null&&f.id?(f.label||"").replace(/^Within [\d.]+ km of /,""):locName())}, within</div>
+       <div class="chips" style="padding-top:6px">${[1,2,5,10,25].map(r=>chip(f.radius===r,`Alerts.f.radius=${r};Alerts.draw()`,r+" km")).join("")}</div>`
+       :`<div style="font-size:12.5px;color:var(--s-muted);margin-top:8px">Set your location first (📍 on the map).</div>`)}
+   <div class="k" style="margin:14px 0 6px">Tell me when this many containers are ready</div>
+   <div class="chips">${[10,20,50,100,200,500].map(v=>chip(f.threshold===v,`Alerts.f.threshold=${v};Alerts.draw()`,`${v} · ${fmt$(v*CENTS/100)}`)).join("")}</div>
+   <div class="k" style="margin:14px 0 6px">How</div>
+   <input id="al-email" type="email" placeholder="Email (optional)" value="${escA(f.email)}" oninput="Alerts.f.email=this.value" style="width:100%;padding:12px 13px;border-radius:12px;border:1.5px solid var(--s-line);background:var(--s-bg);color:var(--s-ink);font-size:15px;font-family:inherit;outline:none">
+   <div class="chips" style="padding-top:8px">${chip(f.phone,"Alerts.f.phone=!Alerts.f.phone;Alerts.draw()",(f.phone?"✓ ":"")+"Ping my phone")}</div>
+   ${f.phone?`<div style="font-size:12px;color:var(--s-muted);margin-top:6px;line-height:1.45">Phone pings come through the free <b>ntfy</b> app. Install it, tap +, and subscribe to <b style="color:var(--s-ink);user-select:all">${this.topic()}</b>. <a href="https://ntfy.sh/${this.topic()}" target="_blank" rel="noopener" style="color:var(--green)">Open topic</a></div>`:""}
+   <div id="al-err" style="font-size:12.5px;color:var(--red,#c0392b);margin-top:8px"></div>
+   <div style="display:flex;gap:9px;margin-top:12px">
+     <div class="cta" style="flex:1;padding:12px;font-size:14px" onclick="Alerts.save()">${f.id?"Save":"Set notification"}</div>
+     ${f.id?`<div class="cta sub" style="flex:0 0 auto;padding:12px 14px;font-size:14px" onclick="Alerts.del(${f.id})">Delete</div>`:""}
+     <div class="cta sub" style="flex:0 0 auto;padding:12px 14px;font-size:14px" onclick="closeModal()">Cancel</div>
+   </div>`);},
+ async save(){
+   const f=this.f, err=t=>{const e=$("al-err");if(e)e.textContent=t;};
+   const email=(f.email||"").trim();
+   if(!email&&!f.phone)return err("Add an email or turn on phone pings.");
+   if(email&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return err("That email doesn't look right.");
+   let body={p_key:this.key(),p_id:f.id,p_kind:f.kind,p_unit:null,p_lat:null,p_lon:null,p_radius:null,p_threshold:f.threshold,p_email:email||null,p_ntfy:f.phone?this.topic():null,p_label:""};
+   if(f.kind==="unit"){const s=SITES.find(x=>x.id===f.unit);if(!s)return err("Pick a favourite unit.");body.p_unit=s.id;body.p_label=s.host;}
+   else{const keep=f.id&&f.lat!=null&&!hasLoc();if(!hasLoc()&&!keep)return err("Set your location first.");
+     body.p_lat=keep?f.lat:HOME.lat;body.p_lon=keep?f.lon:HOME.lng;body.p_radius=f.radius;body.p_label=`Within ${f.radius} km of ${keep?(f.label||"").replace(/^Within [\d.]+ km of /,""):locName()}`;}
+   this.pref("email",email);this.pref("phoneOn",f.phone?"1":"");
+   try{const r=await this.rpc("alert_save",body);if(r.error)return err(r.error==="many"?"That's the limit of 20 notifications.":"Couldn't save that. Check the details.");}
+   catch(e){return err("Can't reach the server.");}
+   closeModal();toast(f.id?"Notification updated.":"Notification set.");this.list=null;this.load();},
+ async del(id){try{await this.rpc("alert_delete",{p_key:this.key(),p_id:id});}catch(e){}closeModal();toast("Notification deleted.");this.list=null;this.load();}
 };
 function addSiteModal(){
  modal(`<div style="font-size:16.5px;font-weight:800">Add a unit</div>
@@ -1190,7 +1262,7 @@ function addSiteLookup(){
  const qq=q.replace(/^unit\s*/,"");
  const hit=SITES.find(s=>s.host.toLowerCase().includes(qq)||(s.area||"").toLowerCase().includes(qq)||(s.units||[]).some(u=>u.toLowerCase().includes(qq)));
  closeModal();
- if(hit){if(!hit.saved)toggleSave(hit.id);toast("Saved "+hit.host);Store.go("unit",{id:hit.id});}
+ if(hit){if(!hit.saved)toggleSave(hit.id);toast("Added "+hit.host+" to favourites");Store.go("unit",{id:hit.id});}
  else toast("No Bin Bypass unit matches “"+q+"”");
 }
 
@@ -1232,7 +1304,7 @@ Views.unit=(p)=>{
  <div class="apphead">
    <div class="back" onclick="Store.back()">${I.back}
      <div style="min-width:0"><div class="t" style="font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.host}</div>
-     <div style="font-size:12px;color:var(--s-muted)">${s.unitCount>1?`${s.unitCount} racks · `:""}<span class="badge ${sv?'live':'grey'}" style="font-size:10.5px;padding:2px 7px">${sv?"Saved":"Not saved"}</span></div></div>
+     <div style="font-size:12px;color:var(--s-muted)">${s.unitCount>1?`${s.unitCount} racks · `:""}<span class="badge ${sv?'live':'grey'}" style="font-size:10.5px;padding:2px 7px">${sv?"Favourite":"Not a favourite"}</span></div></div>
    </div>${themeBtn()}
  </div>
  <div class="scroll">
@@ -1266,7 +1338,7 @@ Views.unit=(p)=>{
   </div>
   <div style="display:flex;gap:9px;margin-top:12px">
     <div class="cta" style="flex:1.4;padding:13px;font-size:14px" onclick="directions('s','${s.id}')">Directions${hasLoc()?` · ${s.km} km`:""}</div>
-    <div class="cta sub" style="flex:1;padding:13px;font-size:14px" onclick="toggleSave('${s.id}')">${sv?"Remove from saved":"Save unit"}</div>
+    <div class="cta sub" style="flex:1;padding:13px;font-size:14px" onclick="toggleSave('${s.id}')">${sv?"★ Remove favourite":"☆ Favourite"}</div>
   </div>
   <div style="display:flex;gap:9px;margin-top:9px">
     <div class="cta sub" style="flex:1;padding:12px;font-size:13.5px;display:flex;gap:7px" onclick="Store.go('hostcard',{id:'${s.id}'})">${I.share} Host impact card</div>
@@ -1276,7 +1348,7 @@ Views.unit=(p)=>{
 };
 function toggleSave(id){const s=SITES.find(x=>x.id===id);s.saved=!s.saved;
  if(s.live){const ids=savedIds().filter(x=>x!==id);if(s.saved)ids.push(id);saveIds(ids);}
- toast(s.saved?"Saved to this phone.":"Removed from saved.");render();}
+ toast(s.saved?"Added to favourites.":"Removed from favourites.");render();}
 /* Collection bookkeeping shared by mark-emptied and completed runs */
 function recordCollection(sites,dest){
  const count=sites.reduce((a,s)=>a+ready(s),0);
@@ -1374,7 +1446,7 @@ Views.run=()=>{
     <div style="font-size:12.5px;color:var(--s-ink)">${MODES[mode].hint}</div>
   </div>
   ${over?`<div style="display:flex;gap:8px;align-items:center;background:var(--amber-tint);border-radius:12px;padding:9px 13px;margin-top:9px"><div style="font-size:12.5px;color:var(--s-ink)">That's <b>${cnt} containers</b> — over a ${MODES[mode].label} carry. Drop a site or switch mode.</div></div>`:""}
-  ${worthLow?`<div style="display:flex;gap:8px;align-items:center;background:var(--amber-tint);border-radius:12px;padding:9px 13px;margin-top:9px"><div style="font-size:12.5px;color:var(--s-ink)">This run is worth <b>${fmt$(cnt*CENTS/100)}</b>, under your ${fmt$(worthMin())} mark. Change it under Saved → Settings.</div></div>`:""}
+  ${worthLow?`<div style="display:flex;gap:8px;align-items:center;background:var(--amber-tint);border-radius:12px;padding:9px 13px;margin-top:9px"><div style="font-size:12.5px;color:var(--s-ink)">This run is worth <b>${fmt$(cnt*CENTS/100)}</b>, under your ${fmt$(worthMin())} mark. Change it under Favourites → Settings.</div></div>`:""}
   <div class="k" style="margin:14px 2px 8px">Your route · tap to add or drop</div>
   <div class="card" style="border-radius:16px;padding:4px 0">
    ${[...SITES].filter(s=>avail(s)>0).sort((a,b)=>a.km-b.km).map(s=>{
@@ -2568,7 +2640,7 @@ Views.walk=()=>{
     <div class="money" style="font-size:24px">${fmt$(P.n*CENTS/100)}</div>
     <div style="font-size:13px;font-weight:700">${P.n} container${P.n===1?"":"s"} · ${km.toFixed(1)} km · ${mins} min${P.route?"":" (approx)"}</div></div>
    ${P.over?`<div style="font-size:12.5px;color:var(--amber);font-weight:700;margin-top:6px">Nothing fits in ${P.asked/WALK_MPM} min. This is the nearest unit with containers ${P.end.home?"and back":"then a return point"}.</div>`:""}
-   ${P.stops&&P.stops.reduce((a,s)=>a+avail(s),0)*CENTS/100<worthMin()?`<div style="font-size:12.5px;color:var(--amber);font-weight:700;margin-top:4px">Below your ${fmt$(worthMin())} worth-a-run amount. Change it under Saved.</div>`:""}
+   ${P.stops&&P.stops.reduce((a,s)=>a+avail(s),0)*CENTS/100<worthMin()?`<div style="font-size:12.5px;color:var(--amber);font-weight:700;margin-top:4px">Below your ${fmt$(worthMin())} worth-a-run amount. Change it under Favourites.</div>`:""}
    <div class="fmeta" style="margin-top:6px">You → ${P.stops.map((s,i)=>`<b style="color:var(--s-ink)">${i+1}</b> ${esc(s.host)} (${avail(s)})`).join(" → ")} → ${P.end.home?"back where you started":`cash in at <b style="color:var(--s-ink)">${endName}</b> (${typeName(P.end).toLowerCase()})${endOpen?`, open when you arrive · ${hoursLabel(P.end)}`:`, closed when you arrive${opensLater(P.end)?" · "+opensLater(P.end):""}`}`}</div>
    <div style="display:flex;gap:8px;margin-top:10px">
     <div class="cta" style="flex:1;padding:11px;font-size:14px" onclick="walkGmaps()">Walk it in Google Maps</div>
