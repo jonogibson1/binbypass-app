@@ -1428,7 +1428,7 @@ function routeRun(R){
    if(Run.ac)Run.ac.abort();
    const ac=new AbortController(); Run.ac=ac; Run.key=R.key; Run.busy=true; Run.res=null;
    try{const r=await osrmRoute(R.pts,R.mode,ac.signal); if(Run.key===R.key)Run.res=r;}
-   catch(e){if(Run.key===R.key)Run.res={err:String(e.message||e)};}   /* kept: a failure isn't retried on every render */
+   catch(e){if(Run.key===R.key){Run.res={err:String(e.message||e)};setTimeout(()=>{if(Run.key===R.key&&Run.res&&Run.res.err){Run.res=null;Run.key="";if(Store.state.screen.name==="run")render();}},30000);}}   /* kept: a failure isn't retried on every render */
    if(Run.key===R.key){Run.busy=false; if(Store.state.screen.name==="run")render();}
  },400);
 }
@@ -2520,14 +2520,27 @@ function bestPlan(c,D,excl=new Set()){
  return best;
 }
 const OSRM_MODE={walk:"routed-foot/route/v1/foot",bike:"routed-bike/route/v1/bike",drive:"routed-car/route/v1/driving"};
-async function osrmRoute(pts,mode="walk",signal){
+/* One OSRM request per 25 stops, run in parallel and joined: a single request with ~100 stops
+   took 10+ s on the free server and hit the timeout on a phone connection. Each piece gets one retry. */
+async function osrmLeg(pts,mode,signal){
  const q=pts.map(p=>`${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(";");
- const ac=new AbortController(), to=setTimeout(()=>ac.abort(),12000);
- if(signal)signal.addEventListener("abort",()=>ac.abort());
- let r; try{ r=await fetch(`https://routing.openstreetmap.de/${OSRM_MODE[mode]}/${q}?overview=full&geometries=geojson`,{signal:ac.signal}); }
- catch(e){ throw new Error(e.name==="AbortError"?"routing server timed out":e.message); } finally{ clearTimeout(to); }
- const j=await r.json(); if(j.code!=="Ok")throw new Error(j.message||j.code);
- return {m:j.routes[0].distance,s:j.routes[0].duration,geo:j.routes[0].geometry,legs:j.routes[0].legs.map(l=>l.distance)};
+ for(let attempt=0;;attempt++){
+   const ac=new AbortController(), to=setTimeout(()=>ac.abort(),20000), stop=()=>ac.abort();
+   if(signal){if(signal.aborted)throw new Error("cancelled");signal.addEventListener("abort",stop);}
+   try{
+     const r=await fetch(`https://routing.openstreetmap.de/${OSRM_MODE[mode]}/${q}?overview=full&geometries=geojson`,{signal:ac.signal});
+     const j=await r.json(); if(j.code!=="Ok")throw new Error(j.message||j.code);
+     return j.routes[0];
+   }catch(e){ if(attempt>=1||(signal&&signal.aborted))throw new Error(e.name==="AbortError"?"routing server timed out":e.message); }
+   finally{ clearTimeout(to); if(signal)signal.removeEventListener("abort",stop); }
+ }
+}
+async function osrmRoute(pts,mode="walk",signal){
+ const N=25, parts=[];
+ for(let i=0;i<pts.length-1;i+=N-1)parts.push(pts.slice(i,Math.min(i+N,pts.length)));
+ const rs=await Promise.all(parts.map(p=>osrmLeg(p,mode,signal)));
+ const coords=[]; rs.forEach((r,i)=>coords.push(...(i?r.geometry.coordinates.slice(1):r.geometry.coordinates)));
+ return {m:rs.reduce((a,r)=>a+r.distance,0),s:rs.reduce((a,r)=>a+r.duration,0),geo:{type:"LineString",coordinates:coords},legs:rs.flatMap(r=>r.legs.map(l=>l.distance))};
 }
 async function planWalk(){
  const D=Walk.mins*WALK_MPM, key=[Walk.mins,Walk.endRvm,Walk.openOnly,HOME.lat.toFixed(4),HOME.lng.toFixed(4),SITES.map(s=>s.id+ready(s)).join()].join("|");
