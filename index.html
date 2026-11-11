@@ -1111,8 +1111,8 @@ Views.value=()=>{
     <div class="cta" style="margin-top:13px;padding:14px" onclick="Store.go('run')">Build a run →</div>
   </div>
   ${hasLoc()?`<div class="card" style="padding:14px 15px;border-radius:18px;margin-top:11px">
-    <div style="font-size:15px;font-weight:800">How far do you want to walk?</div>
-    <div class="seg" style="margin-top:9px">${[15,20,30,45,60].map(m=>`<div class="${Walk.mins===m?"on":""}" onclick="Walk.mins=${m};Walk.plan=null;render()">${m} min</div>`).join("")}</div>
+    <div style="font-size:15px;font-weight:800">How long do you want to walk?</div>
+    <div style="margin-top:9px">${walkTimeCtl()}</div>
     <div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap;align-items:center">
      <div class="chip ${Walk.endRvm?"on":""}" style="box-shadow:none" onclick="Walk.endRvm=!Walk.endRvm;Walk.plan=null;render()">${Walk.endRvm?"✓ ":""}End at a return point</div>
      <div class="cnote">≈ ${(Walk.mins*WALK_MPM/1000).toFixed(1)} km</div>
@@ -2459,13 +2459,61 @@ setInterval(()=>{if(Store.state.appMode==="cds"&&Store.state.screen.name==="flee
 const WALK_MPM=80;                 /* metres a minute, ~4.8 km/h */
 const DETOUR=1.35;                 /* footpath vs straight line, for choosing stops */
 const OSRM="https://routing.openstreetmap.de/routed-foot";
-const Walk={mins:30,endRvm:true,openOnly:true,plan:null,busy:false,err:null,key:""};
+const Walk={goal:2,mins:30,endRvm:true,openOnly:true,plan:null,busy:false,err:null,key:""};
 /* Return points a route may finish at: anything that pays a refund
    (machines, depots, bag drops, counters, pop-ups), not donation-only bins. */
 const rpPays=r=>r.ll&&r.type!=="Donation";
 const openWhen=(r,eta)=>{const o=openAt(r,eta);return o===null?isOpen(r):o;};
 let wmap=null,wmarkers=[];
 const kmA=(a,b)=>dist(a,b);          /* km, straight line */
+
+/* Time picker shared by Value and Your walk: presets, or type any 5-240 min.
+   Under it, "about N min to collect $X": straight-line plans tried at growing times (an estimate). */
+const WALK_GOALS=[1,2,5,10];
+function walkTimeCtl(){
+ const pre=[15,20,30,45,60], custom=!pre.includes(Walk.mins);
+ const g=Walk.goal||2, m=walkMinsFor(g);
+ return `<div class="seg">${pre.map(x=>`<div class="${Walk.mins===x?"on":""}" onclick="Walk.mins=${x};Walk.plan=null;render()">${x} min</div>`).join("")}</div>
+  <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+   <label for="walk-mins" style="font-size:12.5px;color:var(--s-muted)">Or type minutes</label>
+   <input id="walk-mins" type="number" inputmode="numeric" min="5" max="240" step="5" value="${custom?Walk.mins:""}" placeholder="e.g. 90"
+     onchange="const v=Math.round(+this.value);if(v>=5&&v<=240){Walk.mins=v;Walk.plan=null;render();}else{this.value='';toast('Enter 5 to 240 minutes');}"
+     style="width:84px;padding:8px 10px;border-radius:10px;border:1.5px solid ${custom?"var(--green)":"var(--s-line)"};background:var(--s-bg);color:var(--s-ink);font-size:15px;font-family:inherit;outline:none">
+   <span style="font-size:12.5px;color:var(--s-muted)">min</span>
+  </div>
+  <div style="margin-top:10px;padding:10px 12px;border-radius:12px;background:var(--green-tint)">
+   <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span style="font-size:12.5px;color:var(--s-ink)">To collect</span>
+    ${WALK_GOALS.map(v=>`<div class="chip ${g===v?"on":""}" style="box-shadow:none;padding:4px 10px" onclick="Walk.goal=${v};render()">$${v}</div>`).join("")}</div>
+   <div style="font-size:13px;margin-top:7px;color:var(--s-ink)">${m?`It will take about <b>${m} min</b> to collect <b>$${g}</b>${Walk.endRvm?", ending at a return point":""}. <span style="color:var(--green);font-weight:700;cursor:pointer" onclick="Walk.mins=${m};Walk.plan=null;render()">${Walk.mins===m?"&#10003; Using this":"Use "+m+" min"}</span>`
+     :`Not enough ready nearby to collect $${g} in under 4 hours.`}</div>
+   <div style="font-size:11px;color:var(--s-muted);margin-top:3px">Estimate: assumes walking pace, about ${STOP_MIN} min a stop, and that the containers are still there.</div>
+  </div>`;
+}
+const _wmf={k:"",v:{}};
+function walkMinsFor(goal){
+ const k=[Walk.endRvm,Walk.openOnly,HOME.lat.toFixed(4),HOME.lng.toFixed(4),SITES.map(s=>s.id+ready(s)).join()].join("|");
+ if(_wmf.k!==k){_wmf.k=k;_wmf.v={};}
+ if(goal in _wmf.v)return _wmf.v[goal];
+ /* greedy: from home, keep going to the unit with the most containers per metre until the goal is
+    reached; time = walking (with the usual detour factor) + ~STOP_MIN a stop + the leg to the
+    nearest paying return point. Not capped at 8 units like the full planner, and instant. */
+ let out=null;
+ try{
+   const need=Math.ceil(goal*100/CENTS), left=SITES.filter(s=>s.ll&&avail(s)>0);
+   let at={lat:HOME.lat,lng:HOME.lng}, km=0, got=0, stops=0;
+   while(got<need&&left.length){
+     let bi=0,bs=-1; left.forEach((x,i)=>{const sc=avail(x)/Math.max(kmA(at,x.ll),.05); if(sc>bs){bs=sc;bi=i;}});
+     const x=left.splice(bi,1)[0]; km+=kmA(at,x.ll); at=x.ll; got+=avail(x); stops++;
+     if(km*1000*DETOUR/WALK_MPM+stops*STOP_MIN>240)break;
+   }
+   if(got>=need){
+     let end=0; if(Walk.endRvm){const r=REFUND_POINTS.filter(r=>r.ll&&rpPays(r)).map(r=>kmA(at,r.ll)).sort((x,y)=>x-y)[0]; if(r==null)throw 0; end=r;}
+     const mins=(km+end)*1000*DETOUR/WALK_MPM+stops*STOP_MIN;
+     if(mins<=240)out=Math.max(5,Math.ceil(mins/5)*5);
+   }
+ }catch(e){out=null;}
+ return (_wmf.v[goal]=out);
+}
 function walkCandidates(D){
  const start={lat:HOME.lat,lng:HOME.lng};
  const reach=(Walk.endRvm?D:D/2)/DETOUR/1000;   /* km straight-line catchment */
@@ -2630,7 +2678,7 @@ Views.walk=()=>{
  <div class="apphead"><div class="t" style="display:flex;align-items:center;gap:8px"><span role="button" tabindex="0" aria-label="Back to Value" style="cursor:pointer;font-size:22px;line-height:1" onclick="Store.tabTo('value')">‹</span>Your walk</div>${themeBtn(true)}</div>
  <div style="padding:0 16px 8px;flex:0 0 auto">
   <div class="k" style="margin:0 2px 6px">How long do you want to walk?</div>
-  <div class="seg">${[15,20,30,45,60].map(m=>`<div class="${W.mins===m?"on":""}" onclick="Walk.mins=${m};Walk.plan=null;render()">${m} min</div>`).join("")}</div>
+  ${walkTimeCtl()}
   <div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap">
    <div class="chip ${W.endRvm?"on":""}" style="box-shadow:none" onclick="Walk.endRvm=!Walk.endRvm;Walk.plan=null;render()">${W.endRvm?"✓ Finish at a return point":"Loop back to start"}</div>
    ${W.endRvm?`<div class="chip ${W.openOnly?"on":""}" style="box-shadow:none" onclick="Walk.openOnly=!Walk.openOnly;Walk.plan=null;render()">${W.openOnly?"✓ ":""}Open when I get there</div>`:""}
