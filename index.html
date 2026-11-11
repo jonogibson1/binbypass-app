@@ -877,7 +877,7 @@ const escA=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,
 function tabbar(){
  const t=Store.state.tab, tab=(k,ic,l)=>`<div class="tab ${t===k?'on':''}" onclick="Store.tabTo('${k}')${k==='activity'?';Fleet.loadAct()':k==='export'?';expCount()':k==='perf'?';Perf.load()':''}">${ic}${l}</div>`;
  if(Store.state.appMode==="cds")return `<div class="tabbar">${tab('fleet',I.units,'Fleet')}${tab('cdsmap',I.units,'Map')}${tab('perf',I.clock.replace(/width="15" height="15"/,''),'Rank')}${tab('activity',I.clock.replace(/width="15" height="15"/,''),'Activity')}${tab('export',I.share.replace(/width="15" height="15"/,''),'Data')}</div>`;
- return `<div class="tabbar">${tab('map',I.map,'Map')}${tab('value',I.val,'Value')}${tab('myunits',I.units,'Favourites')}</div>`;
+ return `<div class="tabbar">${tab('map',I.map,'Map')}${tab('value',I.val,'Value / Route')}${tab('myunits',I.units,'Favourites')}</div>`;
 }
 /* Root screens carry the Collector | CDS switch next to the theme button. */
 const themeBtn=(compact)=>`<div style="display:flex;gap:8px;align-items:center">${Store.state.stack.length?"":modeSw(compact)}<div class="iconbtn" onclick="toggleTheme()">${I.moon}</div></div>`;
@@ -1098,7 +1098,7 @@ Views.value=()=>{
  const monthCents=Store.state.monthly[5].c;
  return `
  <div class="sbspace"></div>
- <div class="apphead"><div class="t">Collection value</div>${themeBtn()}</div>
+ <div class="apphead"><div class="t">Value / Plan a route</div>${themeBtn()}</div>
  <div class="scroll">
   ${where}
   ${dummyNote(inRange.map(s=>s.siteId))}
