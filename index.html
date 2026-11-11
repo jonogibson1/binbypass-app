@@ -877,7 +877,7 @@ const escA=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,
 function tabbar(){
  const t=Store.state.tab, tab=(k,ic,l)=>`<div class="tab ${t===k?'on':''}" onclick="Store.tabTo('${k}')${k==='activity'?';Fleet.loadAct()':k==='export'?';expCount()':k==='perf'?';Perf.load()':''}">${ic}${l}</div>`;
  if(Store.state.appMode==="cds")return `<div class="tabbar">${tab('fleet',I.units,'Fleet')}${tab('cdsmap',I.units,'Map')}${tab('perf',I.clock.replace(/width="15" height="15"/,''),'Rank')}${tab('activity',I.clock.replace(/width="15" height="15"/,''),'Activity')}${tab('export',I.share.replace(/width="15" height="15"/,''),'Data')}</div>`;
- return `<div class="tabbar">${tab('map',I.map,'Map')}${tab('walk',I.walk,'Walk')}${tab('value',I.val,'Value')}${tab('myunits',I.units,'Saved')}</div>`;
+ return `<div class="tabbar">${tab('map',I.map,'Map')}${tab('value',I.val,'Value')}${tab('myunits',I.units,'Saved')}</div>`;
 }
 /* Root screens carry the Collector | CDS switch next to the theme button. */
 const themeBtn=(compact)=>`<div style="display:flex;gap:8px;align-items:center">${Store.state.stack.length?"":modeSw(compact)}<div class="iconbtn" onclick="toggleTheme()">${I.moon}</div></div>`;
@@ -1110,6 +1110,15 @@ Views.value=()=>{
     ${freshLine()}
     <div class="cta" style="margin-top:13px;padding:14px" onclick="Store.go('run')">Build a run →</div>
   </div>
+  ${hasLoc()?`<div class="card" style="padding:14px 15px;border-radius:18px;margin-top:11px">
+    <div style="font-size:15px;font-weight:800">How far do you want to walk?</div>
+    <div class="seg" style="margin-top:9px">${[15,20,30,45,60].map(m=>`<div class="${Walk.mins===m?"on":""}" onclick="Walk.mins=${m};Walk.plan=null;render()">${m} min</div>`).join("")}</div>
+    <div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap;align-items:center">
+     <div class="chip ${Walk.endRvm?"on":""}" style="box-shadow:none" onclick="Walk.endRvm=!Walk.endRvm;Walk.plan=null;render()">${Walk.endRvm?"✓ ":""}End at a return point</div>
+     <div class="cnote">≈ ${(Walk.mins*WALK_MPM/1000).toFixed(1)} km</div>
+    </div>
+    <div class="cta" style="margin-top:11px;padding:13px" onclick="Walk.plan=null;Store.go('walk')">Plan my walk →</div>
+  </div>`:""}
   <div class="row" style="margin:13px 2px 7px"><div class="k">${hasLoc()?"Nearby units · nearest first":"Units"}</div>
     <div style="font-size:12px;font-weight:700;color:var(--green);cursor:pointer" onclick="Store.go('history')">History →</div></div>
   <div class="card" style="border-radius:16px;overflow:hidden">
@@ -2533,7 +2542,7 @@ Views.walk=()=>{
  const endOpen=P&&!P.none&&!P.end.home?openWhen(P.end,P.eta||new Date()):true;
  return `
  <div class="sbspace"></div>
- <div class="apphead"><div class="t">Plan a route</div>${themeBtn(true)}</div>
+ <div class="apphead"><div class="t" style="display:flex;align-items:center;gap:8px"><span role="button" tabindex="0" aria-label="Back to Value" style="cursor:pointer;font-size:22px;line-height:1" onclick="Store.tabTo('value')">‹</span>Your walk</div>${themeBtn(true)}</div>
  <div style="padding:0 16px 8px;flex:0 0 auto">
   <div class="k" style="margin:0 2px 6px">How long do you want to walk?</div>
   <div class="seg">${[15,20,30,45,60].map(m=>`<div class="${W.mins===m?"on":""}" onclick="Walk.mins=${m};Walk.plan=null;render()">${m} min</div>`).join("")}</div>
